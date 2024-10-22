@@ -1,18 +1,17 @@
 use std::{
-    // env,
-    fs,
+    env, fs,
     io::{self, Write},
-    // os::windows::prelude::MetadataExt,
     path::{Path, PathBuf},
     process,
-    // time::{Duration, Instant},
+    time::Instant,
 };
 
 use clap::{Arg, ArgAction, Command};
-use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
-// use indicatif::{HumanDuration, ProgressBar, ProgressStyle};
 use colored::Colorize;
+use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::error;
+use regex::RegexBuilder;
+use walkdir::WalkDir;
 
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
@@ -49,34 +48,108 @@ fn main() {
 
     // handle arguments
     let matches = sg().get_matches();
-    // let mut file_flag = matches.get_flag("file");
+    let case_insensitive_flag = matches.get_flag("case-insensitive");
+    let performance_flag = matches.get_flag("performance");
 
     // set default search depth
-    // let mut depth_flag = 250;
-    // if let Some(d) = matches.get_one::<String>("depth") {
-    //     match d.parse() {
-    //         Ok(depth) => depth_flag = depth,
-    //         Err(err) => {
-    //             error!("Expected an integer for the search depth: {err}");
-    //             process::exit(1);
-    //         }
-    //     }
-    // }
+    let mut depth_flag = 250;
+    if let Some(d) = matches.get_one::<String>("depth") {
+        match d.parse() {
+            Ok(depth) => depth_flag = depth,
+            Err(err) => {
+                error!("Expected an integer for the search depth: {err}");
+                process::exit(1);
+            }
+        }
+    }
 
     if let Some(args) = matches
         .get_many::<String>("args")
         .map(|a| a.collect::<Vec<_>>())
     {
         // get search pattern from arguments
-        let pattern = vec![args[0].as_str()];
+        // TODO handle unwrap()
+        let reg = RegexBuilder::new(args[0].as_str())
+            .case_insensitive(case_insensitive_flag)
+            // TODO check if needed
+            // .unicode(false)
+            .build()
+            .unwrap();
 
         // get search path from arguments
-        let path = Path::new(&args[1]).to_path_buf();
+        let mut path = Path::new(&args[1]).to_path_buf();
+
+        // accept "." as current directory
+        if path.as_path().to_string_lossy().to_string() == "." {
+            let current_dir = env::current_dir().unwrap_or_else(|err| {
+                error!("Unable to get current directory: {err}");
+                process::exit(1);
+            });
+            path.push(current_dir);
+        }
+
+        let start = Instant::now();
+        let mut entry_count = 0;
+        let mut error_count = 0;
+        let mut search_hits = 0;
+
+        // TODO handle unwrap()
+        for entry in WalkDir::new(path)
+            .max_depth(depth_flag as usize) // set maximum search depth
+            .into_iter()
+        // .filter_map(|e| e.ok())
+        {
+            match entry {
+                Ok(entry) => {
+                    entry_count += 1;
+
+                    // get filename
+                    let name = &entry.file_name().to_string_lossy().to_string();
+
+                    // get parent path
+                    let parent = entry
+                        .path()
+                        .parent()
+                        .unwrap_or_else(|| Path::new(""))
+                        .to_string_lossy()
+                        .to_string()
+                        .replace("\\", "/");
+
+                    let fullpath = parent + "/" + &name;
+
+                    if let Some(capture) = reg.captures(name) {
+                        search_hits += 1;
+
+                        if performance_flag {
+                            // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                            writeln!(handle, "{}", format!("{}", fullpath)).unwrap_or_else(|err| {
+                                error!("Error writing to stdout: {err}");
+                            });
+                        } else {
+                            println!("file://{}: {}", fullpath, &capture[0]);
+                            // println!("file://{}", fullpath);
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+                Err(err) => {
+                    error_count += 1;
+                    println!("{}", err);
+                }
+            }
+        }
 
         // empty bufwriter
         handle
             .flush()
             .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
+
+        print!("\n",);
+        println!("Entries: {}", entry_count);
+        println!("Hits: {}", search_hits);
+        println!("Errors: {}", error_count);
+        println!("{:?}", start.elapsed());
     } else {
         // handle commands
         match matches.subcommand() {
@@ -105,27 +178,18 @@ fn sg() -> Command {
             "SIMPLE GREP".bold().truecolor(250, 0, 104),
             "Leann Phydon <leann.phydon@gmail.com>".italic().dimmed()
         ))
-        .about("Simple file search")
+        .about("Simple file and pattern search")
         .before_long_help(format!(
             "{}\n{}",
             "SIMPLE FIND".bold().truecolor(250, 0, 104),
             "Leann Phydon <leann.phydon@gmail.com>".italic().dimmed()
         ))
         .long_about(format!(
-            "{}\n  {}\n  {}\n  {}\n  {}\n  {}\n  {}\n  {}\n  {}\n\n{}",
-            "Simple file search",
-            "- colourful output and search indicating spinner by default ",
-            "- filter by file, directory and file-extension",
-            "- exclude patterns from the search ",
-            "- exclude hidden files",
-            "- show search statistics at the end",
-            "- accepts \'.\' as current directory",
-            "- search case insensitive",
-            "- no regex search",
-            "Note: every set filter slows down the search".truecolor(250, 0, 104)
+            "{}\n",
+            "Simple file and pattern search",
         ))
         // TODO update version
-        .version("1.8.6")
+        .version("1.0.0")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         .arg_required_else_help(true)
         .arg(
@@ -293,6 +357,7 @@ fn sg() -> Command {
                 .about("Show content of the log file"),
         )
 }
+
 fn check_create_config_dir() -> io::Result<PathBuf> {
     let mut new_dir = PathBuf::new();
     match dirs::config_dir() {
