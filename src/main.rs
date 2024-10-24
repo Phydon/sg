@@ -161,17 +161,19 @@ fn main() {
 
                     let fullpath = parent + "/" + &name;
 
-                    if let Some(capture) = reg.captures(name) {
+                    if let Some(capture) = reg.find(name) {
                         search_hits += 1;
 
                         // TODO highlight search patterns in filenames
+                        // TODO INFO Regex::find return Match that holds byte offsets of start, end + as_str() returns actual pattern
                         if performance_flag {
                             // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
                             writeln!(handle, "{}", format!("{}", fullpath)).unwrap_or_else(|err| {
                                 error!("Error writing to stdout: {err}");
                             });
                         } else {
-                            println!("file://{}: {}", fullpath, &capture[0]);
+                            println!("file://{}: {}", fullpath, capture.as_str());
+                            println!("{}", capture.end());
                             // println!("file://{}", fullpath);
                         }
                     } else {
@@ -434,7 +436,7 @@ fn sg() -> Command {
 }
 
 // TODO implement
-// FIXME adjust for regex -> Regex::captures holds byte offsets of a match
+// FIXME adjust for regex -> Regex::find returns Match -> holds byte offsets of a match
 // fn highlight_pattern_in_name(name: &str, config: &Config) -> String {
 //     // find first byte of pattern in filename
 //     let pat_in_name = name.find(&config.pattern).unwrap_or_else(|| 9999999999);
