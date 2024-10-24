@@ -1,3 +1,4 @@
+// TODO rename performance to raw or raw-mode
 use std::{
     env, fs,
     io::{self, Write},
@@ -9,7 +10,7 @@ use std::{
 use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
-use log::error;
+use log::{error, warn};
 use regex::RegexBuilder;
 use walkdir::WalkDir;
 
@@ -51,10 +52,10 @@ fn main() {
     let case_insensitive_flag = matches.get_flag("case-insensitive");
     let performance_flag = matches.get_flag("performance");
     let count_flag = matches.get_flag("count");
-    // let file_flag = matches.get_flag("file");
-    // let dir_flag = matches.get_flag("dir");
-    // let no_hidden_flag = matches.get_flag("no-hidden");
-    // let show_errors_flag = matches.get_flag("show-errors");
+    let file_flag = matches.get_flag("file");
+    let dir_flag = matches.get_flag("dir");
+    let no_hidden_flag = matches.get_flag("no-hidden");
+    let show_errors_flag = matches.get_flag("show-errors");
 
     // set default search depth
     let mut depth_flag = 250;
@@ -103,6 +104,17 @@ fn main() {
             extensions.append(&mut ext);
         }
 
+        // TODO
+        // get exclude patterns
+        let mut exclude_patterns = Vec::new();
+        if let Some(mut excl) = matches
+            .get_many::<String>("exclude")
+            .map(|a| a.collect::<Vec<_>>())
+        {
+            // TODO store in regex
+            exclude_patterns.append(&mut excl);
+        }
+
         let start = Instant::now();
         let mut entry_count = 0;
         let mut error_count = 0;
@@ -116,6 +128,22 @@ fn main() {
         {
             match entry {
                 Ok(entry) => {
+                    // handle file flag
+                    // must be outside of function file_check()
+                    // else no file will be searched with WalkDir...filter_entry()
+                    if file_flag && !entry.file_type().is_file() {
+                        continue;
+                    }
+
+                    // handle dir flag
+                    // must be outside of function file_check()
+                    // else search stops if dir is found via WalkDir...filter_entry()
+                    if dir_flag && !entry.file_type().is_dir() {
+                        continue;
+                    }
+
+                    // TODO handle extensions here
+
                     entry_count += 1;
 
                     // get filename
@@ -150,7 +178,33 @@ fn main() {
                 }
                 Err(err) => {
                     error_count += 1;
-                    println!("{}", err);
+                    // println!("{}", err);
+
+                    if show_errors_flag {
+                        let path = err.path().unwrap_or(Path::new("")).display();
+                        if let Some(inner) = err.io_error() {
+                            match inner.kind() {
+                                io::ErrorKind::InvalidData => {
+                                    warn!("Entry \'{}\' contains invalid data: {}", path, inner)
+                                }
+                                io::ErrorKind::NotFound => {
+                                    warn!("Entry \'{}\' not found: {}", path, inner);
+                                }
+                                io::ErrorKind::PermissionDenied => {
+                                    warn!(
+                                        "Missing permission to read entry \'{}\': {}",
+                                        path, inner
+                                    )
+                                }
+                                _ => {
+                                    error!(
+                                        "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
+                                        path, inner
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
