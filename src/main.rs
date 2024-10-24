@@ -50,6 +50,11 @@ fn main() {
     let matches = sg().get_matches();
     let case_insensitive_flag = matches.get_flag("case-insensitive");
     let performance_flag = matches.get_flag("performance");
+    let count_flag = matches.get_flag("count");
+    // let file_flag = matches.get_flag("file");
+    // let dir_flag = matches.get_flag("dir");
+    // let no_hidden_flag = matches.get_flag("no-hidden");
+    // let show_errors_flag = matches.get_flag("show-errors");
 
     // set default search depth
     let mut depth_flag = 250;
@@ -86,6 +91,16 @@ fn main() {
                 process::exit(1);
             });
             path.push(current_dir);
+        }
+
+        // TODO
+        // get possible file extensions for filtering
+        let mut extensions = Vec::new();
+        if let Some(mut ext) = matches
+            .get_many::<String>("extension")
+            .map(|a| a.collect::<Vec<_>>())
+        {
+            extensions.append(&mut ext);
         }
 
         let start = Instant::now();
@@ -145,11 +160,15 @@ fn main() {
             .flush()
             .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
 
-        print!("\n",);
-        println!("Entries: {}", entry_count);
-        println!("Hits: {}", search_hits);
-        println!("Errors: {}", error_count);
-        println!("{:?}", start.elapsed());
+        if count_flag {
+            println!(
+                "[{}  {} {} {}]",
+                format!("{:?}", start.elapsed()).bright_blue(),
+                entry_count.to_string().dimmed(),
+                error_count.to_string().bright_red(),
+                search_hits.to_string().bright_green()
+            );
+        }
     } else {
         // handle commands
         match matches.subcommand() {
