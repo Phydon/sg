@@ -54,7 +54,8 @@ fn main() {
     let count_flag = matches.get_flag("count");
     let file_flag = matches.get_flag("file");
     let dir_flag = matches.get_flag("dir");
-    let no_hidden_flag = matches.get_flag("no-hidden");
+    // TODO remove or implement?
+    // let no_hidden_flag = matches.get_flag("no-hidden");
     let show_errors_flag = matches.get_flag("show-errors");
 
     // set default search depth
@@ -163,6 +164,7 @@ fn main() {
                     if let Some(capture) = reg.captures(name) {
                         search_hits += 1;
 
+                        // TODO highlight search patterns in filenames
                         if performance_flag {
                             // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
                             writeln!(handle, "{}", format!("{}", fullpath)).unwrap_or_else(|err| {
@@ -430,6 +432,29 @@ fn sg() -> Command {
                 .about("Show content of the log file"),
         )
 }
+
+// TODO implement
+// FIXME adjust for regex -> Regex::captures holds byte offsets of a match
+// fn highlight_pattern_in_name(name: &str, config: &Config) -> String {
+//     // find first byte of pattern in filename
+//     let pat_in_name = name.find(&config.pattern).unwrap_or_else(|| 9999999999);
+
+//     if pat_in_name == 9999999999 {
+//         // if no pattern found return just the filename
+//         return name.to_string();
+//     } else {
+//         let first_from_name = &name[..pat_in_name];
+//         let last_from_name = &name[(pat_in_name + config.pattern.len())..];
+//         // colourize the pattern in the filename
+//         let highlighted_pattern = config.pattern.truecolor(112, 110, 255).to_string();
+
+//         let mut result = String::from(first_from_name);
+//         result.push_str(&highlighted_pattern);
+//         result.push_str(last_from_name);
+
+//         result.to_string()
+//     }
+// }
 
 fn check_create_config_dir() -> io::Result<PathBuf> {
     let mut new_dir = PathBuf::new();
