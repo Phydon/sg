@@ -2,6 +2,7 @@
 use std::{
     env, fs,
     io::{self, Write},
+    os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
     process,
     time::Instant,
@@ -55,8 +56,7 @@ fn main() {
     let stats_flag = matches.get_flag("stats");
     let file_flag = matches.get_flag("file");
     let dir_flag = matches.get_flag("dir");
-    // TODO remove or implement?
-    // let no_hidden_flag = matches.get_flag("no-hidden");
+    let no_hidden_flag = matches.get_flag("no-hidden");
     let show_errors_flag = matches.get_flag("show-errors");
 
     // set default search depth
@@ -130,7 +130,9 @@ fn main() {
         for entry in WalkDir::new(path)
             .max_depth(depth_flag as usize) // set maximum search depth
             .into_iter()
-        // .filter_map(|e| e.ok())
+            // TODO bottleneck if it has to filter out hidden files
+            .filter_entry(|entry| file_check(entry, no_hidden_flag))
+        // handle hidden flag
         {
             match entry {
                 Ok(entry) => {
@@ -462,6 +464,28 @@ fn highlight_capture(name: &str, capture: Match) -> String {
     let result = before_capture.to_string() + &pattern + after_capture;
 
     result.to_string()
+}
+
+// check entries if hidden and compare to hidden flag
+fn file_check(entry: &DirEntry, no_hidden_flag: bool) -> bool {
+    // TODO bottleneck
+    if no_hidden_flag && is_hidden(&entry.path().to_path_buf()).unwrap_or(false) {
+        return false;
+    }
+
+    return true;
+}
+
+// TODO bottleneck
+fn is_hidden(file_path: &PathBuf) -> std::io::Result<bool> {
+    let metadata = fs::metadata(file_path)?;
+    let attributes = metadata.file_attributes();
+
+    if (attributes & 0x2) > 0 {
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
 
 fn check_create_config_dir() -> io::Result<PathBuf> {
