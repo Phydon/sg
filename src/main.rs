@@ -11,7 +11,7 @@ use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
-use regex::{RegexBuilder, RegexSet};
+use regex::{Match, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
 
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
@@ -159,22 +159,23 @@ fn main() {
                     }
 
                     let parent = get_parent_path(entry);
-                    let fullpath = parent + "/" + &name;
 
                     if let Some(capture) = reg.find(&name) {
                         search_hits += 1;
 
                         if performance_flag {
                             // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                            writeln!(handle, "{}", format!("{}", fullpath)).unwrap_or_else(|err| {
-                                error!("Error writing to stdout: {err}");
-                            });
+                            writeln!(handle, "{}", format!("{}/{}", parent, name)).unwrap_or_else(
+                                |err| {
+                                    error!("Error writing to stdout: {err}");
+                                },
+                            );
                         } else {
-                            // TODO highlight search patterns in filenames
-                            // TODO INFO Regex::find return Match that holds byte offsets of start, end + as_str() returns actual pattern
-                            println!("file://{}: {}", fullpath, capture.as_str());
-                            println!("{}", capture.end());
-                            // println!("file://{}", fullpath);
+                            // highlight search pattern in filename
+                            let highlighted_name = highlight_capture(&name, capture);
+                            let fullpath = parent + "/" + &highlighted_name;
+                            // TODO check if terminal accepts clickable paths
+                            println!("file://{}", fullpath);
                         }
                     }
                 }
@@ -448,28 +449,17 @@ fn get_parent_path(entry: DirEntry) -> String {
         .replace("\\", "/")
 }
 
-// TODO implement
-// FIXME adjust for regex -> Regex::find returns Match -> holds byte offsets of a match
-// fn highlight_pattern_in_name(name: &str, config: &Config) -> String {
-//     // find first byte of pattern in filename
-//     let pat_in_name = name.find(&config.pattern).unwrap_or_else(|| 9999999999);
+fn highlight_capture(name: &str, capture: Match) -> String {
+    assert!(!capture.is_empty());
 
-//     if pat_in_name == 9999999999 {
-//         // if no pattern found return just the filename
-//         return name.to_string();
-//     } else {
-//         let first_from_name = &name[..pat_in_name];
-//         let last_from_name = &name[(pat_in_name + config.pattern.len())..];
-//         // colourize the pattern in the filename
-//         let highlighted_pattern = config.pattern.truecolor(112, 110, 255).to_string();
+    let before_capture = &name[..capture.start()];
+    let after_capture = &name[capture.end()..];
+    let pattern = capture.as_str().bright_blue().to_string();
 
-//         let mut result = String::from(first_from_name);
-//         result.push_str(&highlighted_pattern);
-//         result.push_str(last_from_name);
+    let result = before_capture.to_string() + &pattern + after_capture;
 
-//         result.to_string()
-//     }
-// }
+    result.to_string()
+}
 
 fn check_create_config_dir() -> io::Result<PathBuf> {
     let mut new_dir = PathBuf::new();
