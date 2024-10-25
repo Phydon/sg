@@ -11,7 +11,7 @@ use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
-use regex::RegexBuilder;
+use regex::{RegexBuilder, RegexSet};
 use walkdir::WalkDir;
 
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
@@ -74,14 +74,16 @@ fn main() {
         .get_many::<String>("args")
         .map(|a| a.collect::<Vec<_>>())
     {
-        // get search pattern from arguments
-        // TODO handle unwrap()
+        // get search pattern from arguments -> build regex
         let reg = RegexBuilder::new(args[0].as_str())
             .case_insensitive(case_insensitive_flag)
             // TODO check if needed
             // .unicode(false)
             .build()
-            .unwrap();
+            .unwrap_or_else(|err| {
+                error!("Unable to get regex pattern: {err}");
+                process::exit(1);
+            });
 
         // get search path from arguments
         let mut path = Path::new(&args[1]).to_path_buf();
@@ -105,16 +107,20 @@ fn main() {
             extensions.append(&mut ext);
         }
 
-        // TODO
         // get exclude patterns
         let mut exclude_patterns = Vec::new();
         if let Some(mut excl) = matches
             .get_many::<String>("exclude")
             .map(|a| a.collect::<Vec<_>>())
         {
-            // TODO store in regex
             exclude_patterns.append(&mut excl);
         }
+
+        // store exclude patterns in regex set
+        let excludes = RegexSet::new(exclude_patterns).unwrap_or_else(|err| {
+            error!("Unable to get regex pattern: {err}");
+            process::exit(1);
+        });
 
         let start = Instant::now();
         let mut entry_count = 0;
@@ -150,6 +156,10 @@ fn main() {
                     // get filename
                     let name = &entry.file_name().to_string_lossy().to_string();
 
+                    if excludes.is_match(name) {
+                        continue;
+                    }
+
                     // get parent path
                     let parent = entry
                         .path()
@@ -164,20 +174,18 @@ fn main() {
                     if let Some(capture) = reg.find(name) {
                         search_hits += 1;
 
-                        // TODO highlight search patterns in filenames
-                        // TODO INFO Regex::find return Match that holds byte offsets of start, end + as_str() returns actual pattern
                         if performance_flag {
                             // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
                             writeln!(handle, "{}", format!("{}", fullpath)).unwrap_or_else(|err| {
                                 error!("Error writing to stdout: {err}");
                             });
                         } else {
+                            // TODO highlight search patterns in filenames
+                            // TODO INFO Regex::find return Match that holds byte offsets of start, end + as_str() returns actual pattern
                             println!("file://{}: {}", fullpath, capture.as_str());
                             println!("{}", capture.end());
                             // println!("file://{}", fullpath);
                         }
-                    } else {
-                        continue;
                     }
                 }
                 Err(err) => {
