@@ -266,10 +266,7 @@ fn sg() -> Command {
             "SIMPLE GREP".bold().truecolor(250, 0, 104),
             "Leann Phydon <leann.phydon@gmail.com>".italic().dimmed()
         ))
-        .long_about(format!(
-            "{}\n",
-            "Simple file and pattern search",
-        ))
+        .long_about(format!("{}\n", "Simple file and pattern search",))
         // TODO update version
         .version("1.0.0")
         .author("Leann Phydon <leann.phydon@gmail.com>")
@@ -293,11 +290,12 @@ fn sg() -> Command {
                 .short('c')
                 .long("count")
                 .help("Only print the number of search results")
-                .long_help(format!("{}\n{}", 
+                .long_help(format!(
+                    "{}\n{}",
                     "Only print the number of search results",
                     "Can be combined with the --stats flag to only show stats",
                 ))
-                .action(ArgAction::SetTrue)
+                .action(ArgAction::SetTrue),
         )
         .arg(
             Arg::new("depth")
@@ -365,21 +363,22 @@ fn sg() -> Command {
                 ))
                 .action(ArgAction::SetTrue),
         )
-        .arg(
-            Arg::new("override")
-                .short('o')
-                .long("override")
-                .help("Override all previously set flags")
-                .long_help(format!(
-                    "{}\n{}\n{}",
-                    "Override all previously set flags",
-                    "This can be used when a custom alias for this command is set together with regularly used flags",
-                    "This flag allows to disable these flags and specify new ones"
-                ))
-                // TODO if new args -> add here to this list to override if needed
-                .overrides_with_all(["stats", "stats-long", "file", "dir", "extension", "exclude", "no-hidden", "raw", "count", "show-errors"])
-                .action(ArgAction::SetTrue),
-        )
+        // TODO remove? (useless???)
+        // .arg(
+        //     Arg::new("override")
+        //         .short('o')
+        //         .long("override")
+        //         .help("Override all previously set flags")
+        //         .long_help(format!(
+        //             "{}\n{}\n{}",
+        //             "Override all previously set flags",
+        //             "This can be used when a custom alias for this command is set together with regularly used flags",
+        //             "This flag allows to disable these flags and specify new ones"
+        //         ))
+        //         // TODO if new args -> add here to this list to override if needed
+        //         .overrides_with_all(["stats", "stats-long", "file", "dir", "extension", "exclude", "no-hidden", "raw", "count", "show-errors"])
+        //         .action(ArgAction::SetTrue),
+        // )
         .arg(
             Arg::new("raw")
                 .short('r')
@@ -404,7 +403,7 @@ fn sg() -> Command {
                     "Show possible filesystem errors",
                     "For example for situations such as insufficient permissions",
                 ))
-                .action(ArgAction::SetTrue)
+                .action(ArgAction::SetTrue),
         )
         .arg(
             Arg::new("stats")
