@@ -12,7 +12,7 @@ use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
 use regex::{RegexBuilder, RegexSet};
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
@@ -109,11 +109,11 @@ fn main() {
 
         // get exclude patterns
         let mut exclude_patterns = Vec::new();
-        if let Some(mut excl) = matches
+        if let Some(mut excludes) = matches
             .get_many::<String>("exclude")
             .map(|a| a.collect::<Vec<_>>())
         {
-            exclude_patterns.append(&mut excl);
+            exclude_patterns.append(&mut excludes);
         }
 
         // store exclude patterns in regex set
@@ -127,7 +127,6 @@ fn main() {
         let mut error_count = 0;
         let mut search_hits = 0;
 
-        // TODO handle unwrap()
         for entry in WalkDir::new(path)
             .max_depth(depth_flag as usize) // set maximum search depth
             .into_iter()
@@ -153,25 +152,16 @@ fn main() {
 
                     entry_count += 1;
 
-                    // get filename
-                    let name = &entry.file_name().to_string_lossy().to_string();
+                    let name = get_filename(&entry);
 
-                    if excludes.is_match(name) {
+                    if excludes.is_match(&name) {
                         continue;
                     }
 
-                    // get parent path
-                    let parent = entry
-                        .path()
-                        .parent()
-                        .unwrap_or_else(|| Path::new(""))
-                        .to_string_lossy()
-                        .to_string()
-                        .replace("\\", "/");
-
+                    let parent = get_parent_path(entry);
                     let fullpath = parent + "/" + &name;
 
-                    if let Some(capture) = reg.find(name) {
+                    if let Some(capture) = reg.find(&name) {
                         search_hits += 1;
 
                         if performance_flag {
@@ -192,6 +182,7 @@ fn main() {
                     error_count += 1;
                     // println!("{}", err);
 
+                    // TODO test this
                     if show_errors_flag {
                         let path = err.path().unwrap_or(Path::new("")).display();
                         if let Some(inner) = err.io_error() {
@@ -441,6 +432,20 @@ fn sg() -> Command {
                 .long_flag("log")
                 .about("Show content of the log file"),
         )
+}
+
+fn get_filename(entry: &DirEntry) -> String {
+    entry.file_name().to_string_lossy().to_string()
+}
+
+fn get_parent_path(entry: DirEntry) -> String {
+    entry
+        .path()
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .to_string_lossy()
+        .to_string()
+        .replace("\\", "/")
 }
 
 // TODO implement
