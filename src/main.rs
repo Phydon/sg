@@ -1,4 +1,4 @@
-// TODO rename performance to raw or raw-mode
+// TODO implement 'mg' features
 use std::{
     env, fs,
     io::{self, Write},
@@ -50,8 +50,9 @@ fn main() {
     // handle arguments
     let matches = sg().get_matches();
     let case_insensitive_flag = matches.get_flag("case-insensitive");
-    let performance_flag = matches.get_flag("performance");
+    let raw_flag = matches.get_flag("raw");
     let count_flag = matches.get_flag("count");
+    let stats_flag = matches.get_flag("stats");
     let file_flag = matches.get_flag("file");
     let dir_flag = matches.get_flag("dir");
     // TODO remove or implement?
@@ -97,8 +98,7 @@ fn main() {
             path.push(current_dir);
         }
 
-        // TODO
-        // get possible file extensions for filtering
+        // TODO get possible file extensions for filtering
         let mut extensions = Vec::new();
         if let Some(mut ext) = matches
             .get_many::<String>("extension")
@@ -163,19 +163,20 @@ fn main() {
                     if let Some(capture) = reg.find(&name) {
                         search_hits += 1;
 
-                        if performance_flag {
-                            // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                            writeln!(handle, "{}", format!("{}/{}", parent, name)).unwrap_or_else(
-                                |err| {
-                                    error!("Error writing to stdout: {err}");
-                                },
-                            );
-                        } else {
-                            // highlight search pattern in filename
-                            let highlighted_name = highlight_capture(&name, capture);
-                            let fullpath = parent + "/" + &highlighted_name;
-                            // TODO check if terminal accepts clickable paths
-                            println!("file://{}", fullpath);
+                        if !count_flag {
+                            if raw_flag {
+                                // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                                writeln!(handle, "{}", format!("{}/{}", parent, name))
+                                    .unwrap_or_else(|err| {
+                                        error!("Error writing to stdout: {err}");
+                                    });
+                            } else {
+                                // highlight search pattern in filename
+                                let highlighted_name = highlight_capture(&name, capture);
+                                let fullpath = parent + "/" + &highlighted_name;
+                                // TODO check if terminal accepts clickable paths
+                                println!("file://{}", fullpath);
+                            }
                         }
                     }
                 }
@@ -218,7 +219,9 @@ fn main() {
             .flush()
             .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
 
-        if count_flag {
+        if count_flag && !stats_flag {
+            println!("{}", search_hits);
+        } else if count_flag && stats_flag || !count_flag && stats_flag {
             println!(
                 "[{}  {} {} {}]",
                 format!("{:?}", start.elapsed()).bright_blue(),
@@ -258,7 +261,7 @@ fn sg() -> Command {
         .about("Simple file and pattern search")
         .before_long_help(format!(
             "{}\n{}",
-            "SIMPLE FIND".bold().truecolor(250, 0, 104),
+            "SIMPLE GREP".bold().truecolor(250, 0, 104),
             "Leann Phydon <leann.phydon@gmail.com>".italic().dimmed()
         ))
         .long_about(format!(
@@ -271,7 +274,7 @@ fn sg() -> Command {
         .arg_required_else_help(true)
         .arg(
             Arg::new("args")
-                .help("Add a search pattern and a path")
+                .help("Add a search pattern (regex) and a path")
                 .action(ArgAction::Set)
                 .num_args(2)
                 .value_names(["PATTERN", "PATH"]),
@@ -280,7 +283,7 @@ fn sg() -> Command {
             Arg::new("case-insensitive")
                 .short('i')
                 .long("case-insensitive")
-                .help("Search case insensitivly")
+                .help("Search case insensitively")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -372,18 +375,18 @@ fn sg() -> Command {
                     "This flag allows to disable these flags and specify new ones"
                 ))
                 // TODO if new args -> add here to this list to override if needed
-                .overrides_with_all(["stats", "stats-long", "file", "dir", "extension", "exclude", "no-hidden", "performance", "count", "show-errors"])
+                .overrides_with_all(["stats", "stats-long", "file", "dir", "extension", "exclude", "no-hidden", "raw", "count", "show-errors"])
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("performance")
-                .short('p')
-                .long("performance")
-                .help("Disable spinner, don`t colourize the search output and speed up the output printing")
+            Arg::new("raw")
+                .short('r')
+                .long("raw")
+                .help("Don`t colourize the search output and speed up the output printing")
                 .long_help(format!(
                     "{}\n{}\n{}\n{}",
                     "Focus on performance",
-                    "Disable search indicating spinner and don`t colourize the search output",
+                    "Don`t colourize the search output",
                     "Write the output via BufWriter",
                     "Cannot be set together with the --stats flag",
                 ))
@@ -410,7 +413,7 @@ fn sg() -> Command {
                     "{}\n{}\n{}",
                     "Show short search statistics at the end",
                     "Can be combined with the --count flag to only show stats",
-                    "Cannot be set together with the --performance flag",
+                    "Cannot be set together with the --raw flag",
                 ))
                 .conflicts_with("stats-long")
                 .action(ArgAction::SetTrue),
@@ -423,7 +426,7 @@ fn sg() -> Command {
                     "{}\n{}\n{}",
                     "Show search statistics at the end",
                     "Can be combined with the --count flag to only show stats",
-                    "Cannot be set together with the --performance flag",
+                    "Cannot be set together with the --raw flag",
                 ))
                 .action(ArgAction::SetTrue),
         )
