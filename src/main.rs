@@ -8,7 +8,7 @@ use std::{
     time::Instant,
 };
 
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
@@ -51,25 +51,15 @@ fn main() {
     // handle arguments
     let matches = sg().get_matches();
     let case_insensitive_flag = matches.get_flag("case-insensitive");
-    let raw_flag = matches.get_flag("raw");
     let count_flag = matches.get_flag("count");
-    let stats_flag = matches.get_flag("stats");
-    let file_flag = matches.get_flag("file");
     let dir_flag = matches.get_flag("dir");
+    let file_flag = matches.get_flag("file");
     let no_hidden_flag = matches.get_flag("no-hidden");
+    let raw_flag = matches.get_flag("raw");
     let show_errors_flag = matches.get_flag("show-errors");
+    let stats_flag = matches.get_flag("stats");
 
-    // set default search depth
-    let mut depth_flag = 250;
-    if let Some(d) = matches.get_one::<String>("depth") {
-        match d.parse() {
-            Ok(depth) => depth_flag = depth,
-            Err(err) => {
-                error!("Expected an integer for the search depth: {err}");
-                process::exit(1);
-            }
-        }
-    }
+    let depth_flag = set_search_depth(&matches);
 
     if let Some(args) = matches
         .get_many::<String>("args")
@@ -122,10 +112,27 @@ fn main() {
             process::exit(1);
         });
 
+        // handle grep flag
+        let mut greps = String::new();
+        if let Some(grep_pattern) = matches.get_one::<String>("grep") {
+            greps.push_str(&grep_pattern);
+        }
+
+        let grep_reg = RegexBuilder::new(&greps)
+            .case_insensitive(case_insensitive_flag)
+            // TODO check if needed
+            // .unicode(false)
+            .build()
+            .unwrap_or_else(|err| {
+                error!("Unable to get regex grep pattern: {err}");
+                process::exit(1);
+            });
+
         let start = Instant::now();
         let mut entry_count = 0;
         let mut error_count = 0;
         let mut search_hits = 0;
+        let mut grep_hits = 0;
 
         for entry in WalkDir::new(path)
             .max_depth(depth_flag as usize) // set maximum search depth
@@ -172,23 +179,78 @@ fn main() {
                     }
 
                     let parent = get_parent_path(entry);
+                    let fullpath = format!("{}/{}", parent, name);
 
-                    if let Some(capture) = reg.find(&name) {
+                    let captures: Vec<_> = reg.find_iter(&name).collect();
+                    if !captures.is_empty() {
                         search_hits += 1;
 
-                        if !count_flag {
-                            if raw_flag {
-                                // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                writeln!(handle, "{}", format!("{}/{}", parent, name))
-                                    .unwrap_or_else(|err| {
+                        if !grep_reg.as_str().is_empty() {
+                            let content =
+                                fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
+                            let grep_captures: Vec<_> = grep_reg.find_iter(&content).collect();
+
+                            if !grep_captures.is_empty() {
+                                grep_hits += 1;
+
+                                if !count_flag {
+                                    let mut linenumber = 0;
+
+                                    if raw_flag {
+                                        // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                                        writeln!(handle, "{}", fullpath).unwrap_or_else(|err| {
+                                            error!("Error writing to stdout: {err}");
+                                        });
+
+                                        for line in content.lines() {
+                                            linenumber += 1;
+                                            if grep_reg.is_match(&line) {
+                                                writeln!(
+                                                    handle,
+                                                    "{}",
+                                                    format!(" {}: {}", linenumber, &line)
+                                                )
+                                                .unwrap_or_else(|err| {
+                                                    error!("Error writing to stdout: {err}");
+                                                });
+                                            }
+                                        }
+                                    } else {
+                                        // highlight search pattern in filename
+                                        let highlighted_name = highlight_capture(&name, &captures);
+                                        let highlighted_path = parent + "/" + &highlighted_name;
+                                        // TODO check if terminal accepts clickable paths
+                                        println!("file://{}", highlighted_path);
+
+                                        for line in content.lines() {
+                                            linenumber += 1;
+                                            if grep_reg.is_match(&line) {
+                                                let highlighted_line =
+                                                    highlight_capture(&line, &grep_captures);
+                                                println!(
+                                                    " {}: {}",
+                                                    linenumber.to_string().bright_red(),
+                                                    &highlighted_line
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            if !count_flag {
+                                if raw_flag {
+                                    // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                                    writeln!(handle, "{}", fullpath).unwrap_or_else(|err| {
                                         error!("Error writing to stdout: {err}");
                                     });
-                            } else {
-                                // highlight search pattern in filename
-                                let highlighted_name = highlight_capture(&name, capture);
-                                let fullpath = parent + "/" + &highlighted_name;
-                                // TODO check if terminal accepts clickable paths
-                                println!("file://{}", fullpath);
+                                } else {
+                                    // highlight search pattern in filename
+                                    let highlighted_name = highlight_capture(&name, &captures);
+                                    let highlighted_path = parent + "/" + &highlighted_name;
+                                    // TODO check if terminal accepts clickable paths
+                                    println!("file://{}", highlighted_path);
+                                }
                             }
                         }
                     }
@@ -230,15 +292,22 @@ fn main() {
             .flush()
             .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
 
+        let hits = if !grep_reg.as_str().is_empty() {
+            grep_hits
+        } else {
+            search_hits
+        };
+
+        // TODO FIXME
         if count_flag && !stats_flag {
-            println!("{}", search_hits);
+            println!("{}", hits);
         } else if count_flag && stats_flag || !count_flag && stats_flag {
             println!(
                 "[{}  {} {} {}]",
                 format!("{:?}", start.elapsed()).bright_blue(),
                 entry_count.to_string().dimmed(),
                 error_count.to_string().bright_red(),
-                search_hits.to_string().bright_green()
+                hits.to_string().bright_green()
             );
         }
     } else {
@@ -361,6 +430,15 @@ fn sg() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("grep")
+                .short('g')
+                .long("grep")
+                .help("Search for specific regex pattern in files")
+                .action(ArgAction::Set)
+                .num_args(1)
+                .value_name("GREP_PATTERN"),
+        )
+        .arg(
             Arg::new("no-hidden")
                 .short('H')
                 .long("no-hidden")
@@ -401,7 +479,9 @@ fn sg() -> Command {
                     "Cannot be set together with the --stats flag",
                 ))
                 .action(ArgAction::SetTrue)
-                .conflicts_with_all(["stats", "stats-long"]),
+                // TODO remove stats-long??
+                // .conflicts_with_all(["stats", "stats-long"]),
+                .conflicts_with("stats"),
         )
         .arg(
             Arg::new("show-errors")
@@ -425,27 +505,44 @@ fn sg() -> Command {
                     "Can be combined with the --count flag to only show stats",
                     "Cannot be set together with the --raw flag",
                 ))
-                .conflicts_with("stats-long")
+                // TODO remove??
+                // .conflicts_with("stats-long")
                 .action(ArgAction::SetTrue),
         )
-        .arg(
-            Arg::new("stats-long")
-                .long("stats-long")
-                .help("Show search statistics at the end")
-                .long_help(format!(
-                    "{}\n{}\n{}",
-                    "Show search statistics at the end",
-                    "Can be combined with the --count flag to only show stats",
-                    "Cannot be set together with the --raw flag",
-                ))
-                .action(ArgAction::SetTrue),
-        )
+        // TODO remove??
+        // .arg(
+        //     Arg::new("stats-long")
+        //         .long("stats-long")
+        //         .help("Show search statistics at the end")
+        //         .long_help(format!(
+        //             "{}\n{}\n{}",
+        //             "Show search statistics at the end",
+        //             "Can be combined with the --count flag to only show stats",
+        //             "Cannot be set together with the --raw flag",
+        //         ))
+        //         .action(ArgAction::SetTrue),
+        // )
         .subcommand(
             Command::new("log")
                 .short_flag('L')
                 .long_flag("log")
                 .about("Show content of the log file"),
         )
+}
+
+fn set_search_depth(matches: &ArgMatches) -> u32 {
+    if let Some(d) = matches.get_one::<String>("depth") {
+        match d.parse() {
+            Ok(depth) => return depth,
+            Err(err) => {
+                error!("Expected an integer for the search depth: {err}");
+                process::exit(1);
+            }
+        }
+    } else {
+        // default search depth is 250
+        return 250;
+    }
 }
 
 fn get_filename(entry: &DirEntry) -> String {
@@ -462,14 +559,18 @@ fn get_parent_path(entry: DirEntry) -> String {
         .replace("\\", "/")
 }
 
-fn highlight_capture(name: &str, capture: Match) -> String {
-    assert!(!capture.is_empty());
+fn highlight_capture(content: &str, captures: &Vec<Match>) -> String {
+    assert!(!captures.is_empty());
 
-    let before_capture = &name[..capture.start()];
-    let after_capture = &name[capture.end()..];
-    let pattern = capture.as_str().bright_blue().to_string();
+    let mut result = String::new();
+    // FIXME
+    for capture in captures {
+        let before_capture = &content[..capture.start()];
+        let after_capture = &content[capture.end()..];
+        let pattern = capture.as_str().bright_blue().to_string();
 
-    let result = before_capture.to_string() + &pattern + after_capture;
+        result = before_capture.to_string() + &pattern + after_capture;
+    }
 
     result.to_string()
 }
