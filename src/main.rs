@@ -98,7 +98,7 @@ fn main() {
             path.push(current_dir);
         }
 
-        // TODO get possible file extensions for filtering
+        // get possible file extensions for filtering
         let mut extensions = Vec::new();
         if let Some(mut ext) = matches
             .get_many::<String>("extension")
@@ -150,7 +150,18 @@ fn main() {
                         continue;
                     }
 
-                    // TODO handle extensions here
+                    // handle extensions
+                    if !extensions.is_empty() {
+                        if let Some(extension) = entry.path().extension() {
+                            // skip entry if entry extension doesn't matche any given extension via '--extensions' flag
+                            if !extensions
+                                .iter()
+                                .any(|ex| &extension.to_string_lossy().to_string() == *ex)
+                            {
+                                continue;
+                            }
+                        }
+                    }
 
                     entry_count += 1;
 
