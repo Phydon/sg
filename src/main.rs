@@ -195,9 +195,7 @@ fn main() {
                 }
                 Err(err) => {
                     error_count += 1;
-                    // println!("{}", err);
 
-                    // TODO test this
                     if show_errors_flag {
                         let path = err.path().unwrap_or(Path::new("")).display();
                         if let Some(inner) = err.io_error() {
