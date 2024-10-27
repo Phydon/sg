@@ -590,6 +590,8 @@ fn get_parent_path(entry: DirEntry) -> String {
 }
 
 fn highlight_capture(content: &str, capture: &Match, grep: bool) -> String {
+    // FIXME fails when search pattern for the files/dirs is empty
+    // FIXME e.g.: `"`" ./src/main.rs -g "todo|fixme" -is
     assert!(!capture.is_empty());
 
     let before_capture = &content[..capture.start()];
