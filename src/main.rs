@@ -599,6 +599,8 @@ fn highlight_capture(content: &str, capture: &Match, grep: bool) -> String {
     // FIXME e.g.: `"`" ./src/main.rs -g "todo|fixme" -is
     assert!(!capture.is_empty());
 
+    // FIXME when capture is empty or '.' (match all) the last char in filename is coloured
+    // FIXME e.g.: sg . . -s
     let before_capture = &content[..capture.start()];
     let after_capture = &content[capture.end()..];
     // TODO change colors
