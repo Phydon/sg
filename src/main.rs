@@ -158,6 +158,11 @@ fn main() {
                         continue;
                     }
 
+                    // skip entry if grep flag is set and entry not file
+                    if !grep_reg.as_str().is_empty() && !entry.file_type().is_file() {
+                        continue;
+                    }
+
                     // handle extensions
                     if !extensions.is_empty() {
                         if let Some(extension) = entry.path().extension() {
