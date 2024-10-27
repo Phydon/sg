@@ -1,4 +1,4 @@
-// TODO implement 'mg' features
+// TODO refactor
 use std::{
     env, fs,
     io::{self, Write},
@@ -191,40 +191,20 @@ fn main() {
                     if !captures.is_empty() {
                         search_hits += 1;
 
+                        // check if grep_flag is set
                         if !grep_reg.as_str().is_empty() {
                             let content =
                                 fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
 
-                            // TODO refactor
                             if grep_reg.is_match(&content) {
                                 grep_files += 1;
 
-                                // FIXME if count_flag is set, grep_patterns should be counted as well an printed out
-                                // FIXME currently grep_patterns are shown as '0' , because we don`t search files here
                                 if !count_flag {
-                                    let mut linenumber = 0;
-
                                     if raw_flag {
                                         // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
                                         writeln!(handle, "{}", fullpath).unwrap_or_else(|err| {
                                             error!("Error writing to stdout: {err}");
                                         });
-
-                                        for line in content.lines() {
-                                            linenumber += 1;
-                                            if grep_reg.is_match(&line) {
-                                                grep_patterns += 1;
-
-                                                writeln!(
-                                                    handle,
-                                                    "{}",
-                                                    format!("  {}: {}", linenumber, &line)
-                                                )
-                                                .unwrap_or_else(|err| {
-                                                    error!("Error writing to stdout: {err}");
-                                                });
-                                            }
-                                        }
                                     } else {
                                         // highlight search pattern in filename
                                         let mut highlighted_name = String::new();
@@ -235,17 +215,31 @@ fn main() {
                                         let highlighted_path = parent + "/" + &highlighted_name;
                                         // TODO check if terminal accepts clickable paths
                                         println!("file://{}", highlighted_path);
+                                    }
+                                }
 
-                                        for line in content.lines() {
-                                            linenumber += 1;
-                                            if grep_reg.is_match(&line) {
-                                                grep_patterns += 1;
+                                let mut linenumber = 0;
+                                for line in content.lines() {
+                                    linenumber += 1;
+                                    let grep_captures: Vec<_> = grep_reg.find_iter(&line).collect();
 
-                                                let grep_captures: Vec<_> =
-                                                    grep_reg.find_iter(&line).collect();
+                                    if !grep_captures.is_empty() {
+                                        grep_patterns += grep_captures.len();
 
+                                        if !count_flag {
+                                            if raw_flag {
+                                                writeln!(
+                                                    handle,
+                                                    "{}",
+                                                    format!("  {}: {}", linenumber, &line)
+                                                )
+                                                .unwrap_or_else(|err| {
+                                                    error!("Error writing to stdout: {err}");
+                                                });
+                                            } else {
                                                 let mut highlighted_line = String::new();
                                                 for grep_capture in &grep_captures {
+                                                    // FIXME if more than one capture in line, first one doesn't get highlighted
                                                     highlighted_line = highlight_capture(
                                                         &line,
                                                         &grep_capture,
