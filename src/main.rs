@@ -165,6 +165,8 @@ fn main() {
 
                     // handle extensions
                     if !extensions.is_empty() {
+                        // FIXME BUG sometimes random other extensions don't get filtered out
+                        // FIXME BUG e.g.: 'sg "main" . -e rs' shows also some files without extensions -> why?
                         if let Some(extension) = entry.path().extension() {
                             // skip entry if entry extension doesn't matche any given extension via '--extensions' flag
                             if !extensions
@@ -376,7 +378,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n", "Simple file and pattern search",))
         // TODO update version
-        .version("1.0.0")
+        .version("1.0.1")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         .arg_required_else_help(true)
         .arg(
