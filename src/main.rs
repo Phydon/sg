@@ -213,7 +213,7 @@ fn main() {
                                                 writeln!(
                                                     handle,
                                                     "{}",
-                                                    format!(" {}: {}", linenumber, &line)
+                                                    format!("  {}: {}", linenumber, &line)
                                                 )
                                                 .unwrap_or_else(|err| {
                                                     error!("Error writing to stdout: {err}");
@@ -249,7 +249,7 @@ fn main() {
                                                 }
 
                                                 println!(
-                                                    " {}: {}",
+                                                    "  {}: {}",
                                                     linenumber.to_string().truecolor(250, 0, 104),
                                                     &highlighted_line
                                                 );
