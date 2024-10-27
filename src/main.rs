@@ -188,9 +188,9 @@ fn main() {
                         if !grep_reg.as_str().is_empty() {
                             let content =
                                 fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
-                            let grep_captures: Vec<_> = grep_reg.find_iter(&content).collect();
 
-                            if !grep_captures.is_empty() {
+                            // TODO refactor
+                            if grep_reg.is_match(&content) {
                                 grep_hits += 1;
 
                                 if !count_flag {
@@ -217,7 +217,11 @@ fn main() {
                                         }
                                     } else {
                                         // highlight search pattern in filename
-                                        let highlighted_name = highlight_capture(&name, &captures);
+                                        let mut highlighted_name = String::new();
+                                        for capture in captures {
+                                            highlighted_name =
+                                                highlight_capture(&name, &capture, false);
+                                        }
                                         let highlighted_path = parent + "/" + &highlighted_name;
                                         // TODO check if terminal accepts clickable paths
                                         println!("file://{}", highlighted_path);
@@ -225,8 +229,17 @@ fn main() {
                                         for line in content.lines() {
                                             linenumber += 1;
                                             if grep_reg.is_match(&line) {
-                                                let highlighted_line =
-                                                    highlight_capture(&line, &grep_captures);
+                                                let grep_captures: Vec<_> =
+                                                    grep_reg.find_iter(&line).collect();
+                                                let mut highlighted_line = String::new();
+                                                for grep_capture in &grep_captures {
+                                                    highlighted_line = highlight_capture(
+                                                        &line,
+                                                        &grep_capture,
+                                                        true,
+                                                    );
+                                                }
+                                                // TODO change color
                                                 println!(
                                                     " {}: {}",
                                                     linenumber.to_string().bright_red(),
@@ -246,7 +259,11 @@ fn main() {
                                     });
                                 } else {
                                     // highlight search pattern in filename
-                                    let highlighted_name = highlight_capture(&name, &captures);
+                                    let mut highlighted_name = String::new();
+                                    for capture in captures {
+                                        highlighted_name =
+                                            highlight_capture(&name, &capture, false);
+                                    }
                                     let highlighted_path = parent + "/" + &highlighted_name;
                                     // TODO check if terminal accepts clickable paths
                                     println!("file://{}", highlighted_path);
@@ -292,6 +309,7 @@ fn main() {
             .flush()
             .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
 
+        // TODO FIXME
         let hits = if !grep_reg.as_str().is_empty() {
             grep_hits
         } else {
@@ -560,18 +578,19 @@ fn get_parent_path(entry: DirEntry) -> String {
         .replace("\\", "/")
 }
 
-fn highlight_capture(content: &str, captures: &Vec<Match>) -> String {
-    assert!(!captures.is_empty());
+fn highlight_capture(content: &str, capture: &Match, grep: bool) -> String {
+    assert!(!capture.is_empty());
 
-    let mut result = String::new();
-    // FIXME
-    for capture in captures {
-        let before_capture = &content[..capture.start()];
-        let after_capture = &content[capture.end()..];
-        let pattern = capture.as_str().bright_blue().to_string();
+    let before_capture = &content[..capture.start()];
+    let after_capture = &content[capture.end()..];
+    // TODO change colors
+    let pattern = if grep {
+        capture.as_str().yellow().to_string()
+    } else {
+        capture.as_str().bright_blue().to_string()
+    };
 
-        result = before_capture.to_string() + &pattern + after_capture;
-    }
+    let result = before_capture.to_string() + &pattern + after_capture;
 
     result.to_string()
 }
