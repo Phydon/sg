@@ -324,24 +324,26 @@ fn main() {
             .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
 
         let hits = if !grep_reg.as_str().is_empty() {
-            format!(
-                "[{} {}]",
+            (
                 grep_files.to_string().truecolor(59, 179, 140),
-                grep_patterns.to_string().bright_yellow()
+                grep_patterns.to_string().bright_yellow(),
             )
         } else {
-            search_hits.to_string().truecolor(59, 179, 140).to_string()
+            (search_hits.to_string().truecolor(59, 179, 140), "".hidden())
         };
 
         if count_flag && !stats_flag {
-            println!("{}", hits);
+            println!("{} {}", hits.0.normal(), hits.1.normal());
         } else if count_flag && stats_flag || !count_flag && stats_flag {
+            // FIXME if no grep_flag -> empty space between hits.0 (last number) and ']'
+            // FIXME example output: '[12.1234s 1765 0 1765 ]'
+            // FIXME output should look like this (no space after last number): '[12.1234s 1765 0 1765]'
             println!(
                 "[{}  {} {} {}]",
                 format!("{:?}", start.elapsed()).bright_blue(),
                 entry_count.to_string().dimmed(),
                 error_count.to_string().bright_red(),
-                hits
+                format!("{} {}", hits.0, hits.1)
             );
         }
     } else {
