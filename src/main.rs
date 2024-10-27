@@ -436,6 +436,7 @@ fn sg() -> Command {
                 .help("Search for specific regex pattern in files")
                 .action(ArgAction::Set)
                 .num_args(1)
+                .conflicts_with("dir")
                 .value_name("GREP_PATTERN"),
         )
         .arg(
