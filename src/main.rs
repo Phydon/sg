@@ -132,7 +132,8 @@ fn main() {
         let mut entry_count = 0;
         let mut error_count = 0;
         let mut search_hits = 0;
-        let mut grep_hits = 0;
+        let mut grep_files = 0;
+        let mut grep_patterns = 0;
 
         for entry in WalkDir::new(path)
             .max_depth(depth_flag as usize) // set maximum search depth
@@ -191,8 +192,10 @@ fn main() {
 
                             // TODO refactor
                             if grep_reg.is_match(&content) {
-                                grep_hits += 1;
+                                grep_files += 1;
 
+                                // FIXME if count_flag is set, grep_patterns should be counted as well an printed out
+                                // FIXME currently grep_patterns are shown as '0' , because we don`t search files here
                                 if !count_flag {
                                     let mut linenumber = 0;
 
@@ -205,6 +208,8 @@ fn main() {
                                         for line in content.lines() {
                                             linenumber += 1;
                                             if grep_reg.is_match(&line) {
+                                                grep_patterns += 1;
+
                                                 writeln!(
                                                     handle,
                                                     "{}",
@@ -229,8 +234,11 @@ fn main() {
                                         for line in content.lines() {
                                             linenumber += 1;
                                             if grep_reg.is_match(&line) {
+                                                grep_patterns += 1;
+
                                                 let grep_captures: Vec<_> =
                                                     grep_reg.find_iter(&line).collect();
+
                                                 let mut highlighted_line = String::new();
                                                 for grep_capture in &grep_captures {
                                                     highlighted_line = highlight_capture(
@@ -239,10 +247,10 @@ fn main() {
                                                         true,
                                                     );
                                                 }
-                                                // TODO change color
+
                                                 println!(
                                                     " {}: {}",
-                                                    linenumber.to_string().bright_red(),
+                                                    linenumber.to_string().truecolor(250, 0, 104),
                                                     &highlighted_line
                                                 );
                                             }
@@ -264,6 +272,7 @@ fn main() {
                                         highlighted_name =
                                             highlight_capture(&name, &capture, false);
                                     }
+
                                     let highlighted_path = parent + "/" + &highlighted_name;
                                     // TODO check if terminal accepts clickable paths
                                     println!("file://{}", highlighted_path);
@@ -309,14 +318,16 @@ fn main() {
             .flush()
             .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
 
-        // TODO FIXME
         let hits = if !grep_reg.as_str().is_empty() {
-            grep_hits
+            format!(
+                "[{} {}]",
+                grep_files.to_string().truecolor(59, 179, 140),
+                grep_patterns.to_string().bright_yellow()
+            )
         } else {
-            search_hits
+            search_hits.to_string().truecolor(59, 179, 140).to_string()
         };
 
-        // TODO FIXME
         if count_flag && !stats_flag {
             println!("{}", hits);
         } else if count_flag && stats_flag || !count_flag && stats_flag {
@@ -325,7 +336,7 @@ fn main() {
                 format!("{:?}", start.elapsed()).bright_blue(),
                 entry_count.to_string().dimmed(),
                 error_count.to_string().bright_red(),
-                hits.to_string().bright_green()
+                hits
             );
         }
     } else {
@@ -585,9 +596,9 @@ fn highlight_capture(content: &str, capture: &Match, grep: bool) -> String {
     let after_capture = &content[capture.end()..];
     // TODO change colors
     let pattern = if grep {
-        capture.as_str().yellow().to_string()
+        capture.as_str().bright_yellow().to_string()
     } else {
-        capture.as_str().bright_blue().to_string()
+        capture.as_str().truecolor(59, 179, 140).to_string()
     };
 
     let result = before_capture.to_string() + &pattern + after_capture;
