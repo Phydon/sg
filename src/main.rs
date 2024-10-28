@@ -69,7 +69,7 @@ fn main() {
         if args[0].is_empty() {
             let err = sg().error(
                 clap::error::ErrorKind::MissingRequiredArgument,
-                "value required for '[PATTERN]', none provided",
+                "value required for '[REGEX]', none provided",
             );
             warn!("{}", err);
             process::exit(1);
@@ -386,17 +386,20 @@ fn sg() -> Command {
             "SIMPLE GREP".bold().truecolor(250, 0, 104),
             "Leann Phydon <leann.phydon@gmail.com>".italic().dimmed()
         ))
-        .long_about(format!("{}\n", "Simple file and pattern search",))
+        .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.0.1")
+        .version("1.0.2")
         .author("Leann Phydon <leann.phydon@gmail.com>")
+        // INFO usage format specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
+        .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
+            sg [COMMAND]")
         .arg_required_else_help(true)
         .arg(
             Arg::new("args")
-                .help("Add a search pattern (regex) and a path")
+                .help("Add a search regex and a path for the file search")
                 .action(ArgAction::Set)
                 .num_args(2)
-                .value_names(["PATTERN", "PATH"]),
+                .value_names(["REGEX", "PATH"]),
         )
         .arg(
             Arg::new("case-insensitive")
@@ -411,9 +414,11 @@ fn sg() -> Command {
                 .long("count")
                 .help("Only print the number of search results")
                 .long_help(format!(
-                    "{}\n{}",
+                    "{}\n{}\n{}\n{}",
                     "Only print the number of search results",
                     "Can be combined with the --stats flag to only show stats",
+                    "When used with the --grep flag the first output is the number of files containing at least one match",
+                    "The second number is the overall number of matches",
                 ))
                 .action(ArgAction::SetTrue),
         )
@@ -431,7 +436,8 @@ fn sg() -> Command {
             Arg::new("dir")
                 .short('d')
                 .long("dir")
-                .help("Search only in directory names for the pattern")
+                .visible_aliases(["directory", "directories"])
+                .help("Search only in directory names for the given regex")
                 .action(ArgAction::SetTrue)
                 .conflicts_with("file"),
         )
@@ -439,11 +445,12 @@ fn sg() -> Command {
             Arg::new("extension")
                 .short('e')
                 .long("extension")
+                .visible_aliases(["extensions", "ext"])
                 .help("Only search in files with the given extensions")
                 .long_help(format!(
                     "{}\n{}",
                     "Only search in files with the given extensions",
-                    "Must be provided after the pattern and the search path"
+                    "Must be provided after the regex and the search path"
                 ))
                 .action(ArgAction::Set)
                 .conflicts_with("dir")
@@ -454,21 +461,22 @@ fn sg() -> Command {
             Arg::new("exclude")
                 .short('E')
                 .long("exclude")
-                .help("Enter patterns to exclude from the search")
+                .help("Exclude regex patterns from the search")
                 .long_help(format!(
                     "{}\n{}",
-                    "Enter patterns to exclude from the search",
-                    "Must be provided after the pattern and the search path"
+                    "Exclude regex patterns from the search",
+                    "Must be provided after the regex and the search path"
                 ))
                 .action(ArgAction::Set)
                 .num_args(1..)
-                .value_name("PATTERNS"),
+                .value_name("REGEX"),
         )
         .arg(
             Arg::new("file")
                 .short('f')
                 .long("file")
-                .help("Search only in file names for the pattern")
+                .visible_alias("files")
+                .help("Search only in filenames for the regex")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -479,7 +487,7 @@ fn sg() -> Command {
                 .action(ArgAction::Set)
                 .num_args(1)
                 .conflicts_with("dir")
-                .value_name("GREP_PATTERN"),
+                .value_name("REGEX"),
         )
         .arg(
             Arg::new("no-hidden")
@@ -519,16 +527,14 @@ fn sg() -> Command {
                     "Focus on performance",
                     "Don`t colourize the search output",
                     "Write the output via BufWriter",
-                    "Cannot be set together with the --stats flag",
+                    "Print raw filepaths",
                 ))
                 .action(ArgAction::SetTrue)
-                // TODO remove stats-long??
-                // .conflicts_with_all(["stats", "stats-long"]),
-                .conflicts_with("stats"),
         )
         .arg(
             Arg::new("show-errors")
                 .long("show-errors")
+                .visible_alias("show-error")
                 .help("Show possible filesystem errors")
                 .long_help(format!(
                     "{}\n{}",
@@ -541,15 +547,14 @@ fn sg() -> Command {
             Arg::new("stats")
                 .short('s')
                 .long("stats")
+                .visible_aliases(["statistic", "statistics"])
                 .help("Show short search statistics at the end")
                 .long_help(format!(
                     "{}\n{}\n{}",
                     "Show short search statistics at the end",
                     "Can be combined with the --count flag to only show stats",
-                    "Cannot be set together with the --raw flag",
+                    "Output: ['elapsed time'  'searched number of files' 'errors' 'file search hits' 'grep hits']",
                 ))
-                // TODO remove??
-                // .conflicts_with("stats-long")
                 .action(ArgAction::SetTrue),
         )
         // TODO remove??
