@@ -65,6 +65,16 @@ fn main() {
         .get_many::<String>("args")
         .map(|a| a.collect::<Vec<_>>())
     {
+        // don't accept emtpy strings like "" (or in powershell `"`")
+        if args[0].is_empty() {
+            let err = sg().error(
+                clap::error::ErrorKind::MissingRequiredArgument,
+                "value required for '[PATTERN]', none provided",
+            );
+            warn!("{}", err);
+            process::exit(1);
+        }
+
         // get search pattern from arguments -> build regex
         let reg = RegexBuilder::new(args[0].as_str())
             .case_insensitive(case_insensitive_flag)
@@ -593,8 +603,6 @@ fn get_parent_path(entry: DirEntry) -> String {
 }
 
 fn highlight_capture(content: &str, capture: &Match, grep: bool) -> String {
-    // FIXME fails when search pattern for the files/dirs is empty
-    // FIXME e.g.: `"`" ./src/main.rs -g "todo|fixme" -is
     assert!(!capture.is_empty());
 
     // FIXME when capture is empty or '.' (match all) the last char in filename is coloured
