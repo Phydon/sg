@@ -8,7 +8,45 @@ Simple recursive file and pattern search via regex patterns
 
 ## Examples
 
-> todo
+
+> todo add more examples
+
+
+### Example 1
+
+- list everything in the current directory
+
+```shell
+sg . .
+```
+
+
+### Example 2
+
+- find all python or rust files in the 'src' directory that contain the word 'main' or 'init' in their filename
+
+```shell
+sg "main|init" .\src\ -e rs py
+```
+
+
+### Example 3
+
+- find all files in the current directory that contain the words 'fixme' or 'todo'
+- search case insensitively
+
+```shell
+sg . . -g "todo|fixme" -i
+```
+
+
+### Example 4
+
+- count all txt-files in the 'document' directory
+
+```shell
+sg . .\Documents -e txt -c
+```
 
 
 ## Usage
@@ -20,8 +58,10 @@ Usage: sg [REGEX] [PATH] [OPTIONS]
        sg [COMMAND]
 
 Commands:
-  log, -L, --log  Show content of the log file
-  help            Print this message or the help of the given subcommand(s)
+  examples, --examples  Show examples
+  log, -L, --log        Show content of the log file
+  syntax, -S, --syntax  Show regex syntax information
+  help                  Print this message or the help of the given subcommand(s)
 
 Arguments:
   [REGEX] [PATH]  Add a search regex and a path for the file search
@@ -50,8 +90,10 @@ Usage: sg [REGEX] [PATH] [OPTIONS]
        sg [COMMAND]
 
 Commands:
-  log, -L, --log  Show content of the log file
-  help            Print this message or the help of the given subcommand(s)
+  examples, --examples  Show examples
+  log, -L, --log        Show content of the log file
+  syntax, -S, --syntax  Show regex syntax information
+  help                  Print this message or the help of the given subcommand(s)
 
 Arguments:
   [REGEX] [PATH]
