@@ -1,6 +1,6 @@
 # sg
 
-***S**imple **G**rep***
+***S**imple **G**rep*
 
 > combining [sf](https://github.com/Phydon/sf) and [mg](https://github.com/Phydon/mg)
 
