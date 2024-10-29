@@ -1,6 +1,6 @@
 // TODO refactor
-// TODO examples flag
-// TODO syntax flag
+// TODO add flag to grep mode to only show relevant files that contain the regex
+// TODO -> don't show the actual matching lines
 use std::{
     env, fs,
     io::{self, Write},
