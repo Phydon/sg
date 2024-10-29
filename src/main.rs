@@ -220,12 +220,8 @@ fn main() {
                                             error!("Error writing to stdout: {err}");
                                         });
                                     } else {
-                                        // highlight search pattern in filename
-                                        let mut highlighted_name = String::new();
-                                        for capture in captures {
-                                            highlighted_name =
-                                                highlight_capture(&name, &capture, false);
-                                        }
+                                        let highlighted_name =
+                                            highlight_capture(&name, &captures, false);
                                         let highlighted_path = parent + "/" + &highlighted_name;
                                         // TODO check if terminal accepts clickable paths
                                         println!("file://{}", highlighted_path);
@@ -251,16 +247,8 @@ fn main() {
                                                     error!("Error writing to stdout: {err}");
                                                 });
                                             } else {
-                                                let mut highlighted_line = String::new();
-                                                for grep_capture in &grep_captures {
-                                                    // FIXME if more than one capture in line, first one doesn't get highlighted
-                                                    // FIXME because the '&line' gets passed here again -> only last highlighted remains
-                                                    highlighted_line = highlight_capture(
-                                                        &line,
-                                                        &grep_capture,
-                                                        true,
-                                                    );
-                                                }
+                                                let highlighted_line =
+                                                    highlight_capture(&line, &grep_captures, true);
 
                                                 println!(
                                                     "  {}: {}",
@@ -280,12 +268,8 @@ fn main() {
                                         error!("Error writing to stdout: {err}");
                                     });
                                 } else {
-                                    // highlight search pattern in filename
-                                    let mut highlighted_name = String::new();
-                                    for capture in captures {
-                                        highlighted_name =
-                                            highlight_capture(&name, &capture, false);
-                                    }
+                                    let highlighted_name =
+                                        highlight_capture(&name, &captures, false);
 
                                     let highlighted_path = parent + "/" + &highlighted_name;
                                     // TODO check if terminal accepts clickable paths
@@ -622,23 +606,26 @@ fn get_parent_path(entry: DirEntry) -> String {
         .replace("\\", "/")
 }
 
-fn highlight_capture(content: &str, capture: &Match, grep: bool) -> String {
-    assert!(!capture.is_empty());
+fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String {
+    assert!(!captures.is_empty());
 
-    // FIXME when capture is empty or '.' (match all) the last char in filename is coloured
-    // FIXME e.g.: sg . . -s
-    let before_capture = &content[..capture.start()];
-    let after_capture = &content[capture.end()..];
-    // TODO change to fixed colors (don't use standard terminal colours)
-    let pattern = if grep {
-        capture.as_str().bright_yellow().to_string()
-    } else {
-        capture.as_str().truecolor(59, 179, 140).to_string()
-    };
+    let mut new = String::with_capacity(content.len());
+    let mut last_match = 0;
+    for cap in captures {
+        new.push_str(&content[last_match..cap.start()]);
 
-    let result = before_capture.to_string() + &pattern + after_capture;
+        // TODO change to fixed colors (don't use standard terminal colours)
+        let pattern = if grep {
+            cap.as_str().bright_yellow().to_string()
+        } else {
+            cap.as_str().truecolor(59, 179, 140).to_string()
+        };
+        new.push_str(&pattern);
+        last_match = cap.end();
+    }
+    new.push_str(&content[last_match..]);
 
-    result.to_string()
+    new
 }
 
 // check entries if hidden and compare to hidden flag
