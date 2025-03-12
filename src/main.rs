@@ -14,7 +14,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
-use regex::{Match, RegexBuilder, RegexSet};
+use regex::{Match, Regex, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
 
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
@@ -78,15 +78,7 @@ fn main() {
         }
 
         // get search pattern from arguments -> build regex
-        let reg = RegexBuilder::new(args[0].as_str())
-            .case_insensitive(case_insensitive_flag)
-            // TODO check if needed
-            // .unicode(false)
-            .build()
-            .unwrap_or_else(|err| {
-                error!("Unable to get regex pattern: {err}");
-                process::exit(1);
-            });
+        let reg = build_regex(args[0].as_str(), case_insensitive_flag);
 
         // get search path from arguments
         let mut path = Path::new(&args[1]).to_path_buf();
@@ -130,15 +122,7 @@ fn main() {
             greps.push_str(&grep_pattern);
         }
 
-        let grep_reg = RegexBuilder::new(&greps)
-            .case_insensitive(case_insensitive_flag)
-            // TODO check if needed
-            // .unicode(false)
-            .build()
-            .unwrap_or_else(|err| {
-                error!("Unable to get regex grep pattern: {err}");
-                process::exit(1);
-            });
+        let grep_reg = build_regex(&greps, case_insensitive_flag);
 
         let start = Instant::now();
         let mut entry_count = 0;
@@ -180,7 +164,7 @@ fn main() {
                         // FIXME BUG sometimes random other extensions don't get filtered out
                         // FIXME BUG e.g.: 'sg "main" . -e rs' shows also some files without extensions -> why?
                         if let Some(extension) = entry.path().extension() {
-                            // skip entry if entry extension doesn't matche any given extension via '--extensions' flag
+                            // skip entry if entry extension doesn't match any given extension via '--extensions' flag
                             if !extensions
                                 .iter()
                                 .any(|ex| &extension.to_string_lossy().to_string() == *ex)
@@ -590,6 +574,20 @@ fn set_search_depth(matches: &ArgMatches) -> u32 {
         // default search depth is 250
         return 250;
     }
+}
+
+fn build_regex(patterns: &str, case_insensitive_flag: bool) -> Regex {
+    let reg = RegexBuilder::new(patterns)
+        .case_insensitive(case_insensitive_flag)
+        // TODO check if needed
+        // .unicode(false)
+        .build()
+        .unwrap_or_else(|err| {
+            error!("Unable to get regex pattern: {err}");
+            process::exit(1);
+        });
+
+    reg
 }
 
 fn get_filename(entry: &DirEntry) -> String {
