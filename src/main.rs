@@ -2,7 +2,9 @@
 // TODO add flag to grep mode to only show relevant files that contain the regex
 // TODO     -> don't show the actual matching lines
 use std::{
-    env, fs,
+    env,
+    ffi::OsStr,
+    fs,
     io::{self, Write},
     os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
@@ -95,7 +97,7 @@ fn main() {
         // get possible file extensions for filtering
         let mut extensions = Vec::new();
         if let Some(mut ext) = matches
-            .get_many::<String>("extension")
+            .get_many::<String>("extensions")
             .map(|a| a.collect::<Vec<_>>())
         {
             extensions.append(&mut ext);
@@ -159,19 +161,19 @@ fn main() {
                         continue;
                     }
 
-                    // handle extensions
-                    if !extensions.is_empty() {
-                        // FIXME BUG sometimes random other extensions don't get filtered out
-                        // FIXME BUG e.g.: 'sg "main" . -e rs' shows also some files without extensions -> why?
-                        if let Some(extension) = entry.path().extension() {
-                            // skip entry if entry extension doesn't match any given extension via '--extensions' flag
-                            if !extensions
-                                .iter()
-                                .any(|ex| &extension.to_string_lossy().to_string() == *ex)
-                            {
-                                continue;
-                            }
-                        }
+                    // handle extensions -> skip entry if entry extension doesn't match any given extension via '--extensions' flag
+                    if !extensions.is_empty()
+                        && !extensions.iter().any(|ex| {
+                            &entry
+                                .path()
+                                .extension()
+                                .unwrap_or(&OsStr::new(""))
+                                .to_string_lossy()
+                                .to_string()
+                                == *ex
+                        })
+                    {
+                        continue;
                     }
 
                     let name = get_filename(&entry);
@@ -415,9 +417,9 @@ fn sg() -> Command {
                 .conflicts_with("file"),
         )
         .arg(
-            Arg::new("extension")
+            Arg::new("extensions")
                 .short('e')
-                .long("extension")
+                .long("extensions")
                 .visible_aliases(["extensions", "ext"])
                 .help("Only search in files with the given extensions")
                 .long_help(format!(
@@ -487,7 +489,7 @@ fn sg() -> Command {
         //             "This flag allows to disable these flags and specify new ones"
         //         ))
         //         // TODO if new args -> add here to this list to override if needed
-        //         .overrides_with_all(["stats", "stats-long", "file", "dir", "extension", "exclude", "no-hidden", "raw", "count", "show-errors"])
+        //         .overrides_with_all(["stats", "stats-long", "file", "dir", "extensions", "exclude", "no-hidden", "raw", "count", "show-errors"])
         //         .action(ArgAction::SetTrue),
         // )
         .arg(
