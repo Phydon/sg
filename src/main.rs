@@ -1,6 +1,6 @@
 // TODO refactor
 // TODO add flag to grep mode to only show relevant files that contain the regex
-// TODO -> don't show the actual matching lines
+// TODO     -> don't show the actual matching lines
 use std::{
     env, fs,
     io::{self, Write},
@@ -174,22 +174,24 @@ fn main() {
                         }
                     }
 
-                    entry_count += 1;
-
                     let name = get_filename(&entry);
 
                     if excludes.is_match(&name) {
                         continue;
                     }
 
+                    // all pre-filters (via flags) are checked -> start counting entries
+                    entry_count += 1;
+
                     let parent = get_parent_path(entry);
                     let fullpath = format!("{}/{}", parent, name);
 
+                    // search for a pattern match (regex) in the remaining entries
                     let captures: Vec<_> = reg.find_iter(&name).collect();
                     if !captures.is_empty() {
                         search_hits += 1;
 
-                        // check if grep_flag is set
+                        // if grep_flag is set -> search for pattern matches (regex) in files
                         if !grep_reg.as_str().is_empty() {
                             let content =
                                 fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
@@ -359,7 +361,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.0.3")
+        .version("1.0.4")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
