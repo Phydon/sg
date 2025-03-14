@@ -312,27 +312,38 @@ fn main() {
             .flush()
             .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
 
+        // format found search hits based on whether grep flag was set or not
+        // if grep flag was set, it shows two numbers:
+        //     - for found files containing matches
+        //     - for number if found matches overall
+        // if not it show one number: the numebr of found files containing a match in the filename
         let hits = if !grep_reg.as_str().is_empty() {
-            (
-                grep_files.to_string().truecolor(59, 179, 140),
-                grep_patterns.to_string().bright_yellow(),
-            )
+            format!("{} {}", grep_files.to_string(), grep_patterns.to_string(),)
         } else {
-            (search_hits.to_string().truecolor(59, 179, 140), "".hidden())
+            search_hits.to_string()
         };
 
         if count_flag && !stats_flag {
-            println!("{} {}", hits.0.normal(), hits.1.normal());
+            println!("{}", hits);
         } else if stats_flag {
-            // FIXME if no grep_flag -> empty space between hits.0 (last number) and ']'
-            // FIXME example output: '[12.1234s 1765 0 1765 ]'
-            // FIXME output should look like this (no space after last number): '[12.1234s 1765 0 1765]'
+            // check if hits contains one or two numbers and colourize accordingly
+            let hits: Vec<_> = hits.split_whitespace().collect();
+            let hits_formated = if hits.len() <= 1 {
+                format!("{}", hits[0].truecolor(59, 179, 140))
+            } else {
+                format!(
+                    "{} {}",
+                    hits[0].truecolor(59, 179, 140),
+                    hits[1].bright_yellow()
+                )
+            };
+
             println!(
                 "[{}  {} {} {}]",
                 format!("{:?}", start.elapsed()).bright_blue(),
                 entry_count.to_string().dimmed(),
                 error_count.to_string().bright_red(),
-                format!("{} {}", hits.0, hits.1)
+                hits_formated
             );
         }
     } else if let Some(_) = matches.subcommand_matches("log") {
