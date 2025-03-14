@@ -215,20 +215,18 @@ fn main() {
                                         // TODO check if terminal accepts clickable paths
                                         println!("file://{}", highlighted_path);
                                     }
-                                }
 
-                                if !matching_files_flag {
-                                    let mut linenumber = 0;
-                                    for line in content.lines() {
-                                        linenumber += 1;
-                                        let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                        let grep_captures: Vec<_> =
-                                            grep_reg.find_iter(&line).collect();
+                                    if !matching_files_flag {
+                                        let mut linenumber = 0;
+                                        for line in content.lines() {
+                                            linenumber += 1;
+                                            let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                            let grep_captures: Vec<_> =
+                                                grep_reg.find_iter(&line).collect();
 
-                                        if !grep_captures.is_empty() {
-                                            grep_patterns += grep_captures.len();
+                                            if !grep_captures.is_empty() {
+                                                grep_patterns += grep_captures.len();
 
-                                            if !count_flag {
                                                 if raw_flag {
                                                     writeln!(
                                                         handle,
