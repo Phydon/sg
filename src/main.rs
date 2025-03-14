@@ -403,7 +403,7 @@ fn sg() -> Command {
                 .short('D')
                 .long("depth")
                 .help("Set max search depth")
-                .default_value("250")
+                .default_value("1000000")
                 .action(ArgAction::Set)
                 .num_args(1)
                 .value_name("NUMBER"),
@@ -576,8 +576,8 @@ fn set_search_depth(matches: &ArgMatches) -> u32 {
             }
         }
     } else {
-        // default search depth is 250
-        return 250;
+        // default search depth is 1000000
+        return 1000000;
     }
 }
 
