@@ -323,7 +323,7 @@ fn main() {
 
         if count_flag && !stats_flag {
             println!("{} {}", hits.0.normal(), hits.1.normal());
-        } else if count_flag && stats_flag || !count_flag && stats_flag {
+        } else if stats_flag {
             // FIXME if no grep_flag -> empty space between hits.0 (last number) and ']'
             // FIXME example output: '[12.1234s 1765 0 1765 ]'
             // FIXME output should look like this (no space after last number): '[12.1234s 1765 0 1765]'
