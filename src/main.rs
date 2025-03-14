@@ -58,6 +58,7 @@ fn main() {
     let count_flag = matches.get_flag("count");
     let dir_flag = matches.get_flag("dir");
     let file_flag = matches.get_flag("file");
+    let matching_files_flag = matches.get_flag("matching-files");
     let no_hidden_flag = matches.get_flag("no-hidden");
     let raw_flag = matches.get_flag("raw");
     let show_errors_flag = matches.get_flag("show-errors");
@@ -216,34 +217,42 @@ fn main() {
                                     }
                                 }
 
-                                let mut linenumber = 0;
-                                for line in content.lines() {
-                                    linenumber += 1;
-                                    let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                    let grep_captures: Vec<_> = grep_reg.find_iter(&line).collect();
+                                if !matching_files_flag {
+                                    let mut linenumber = 0;
+                                    for line in content.lines() {
+                                        linenumber += 1;
+                                        let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                        let grep_captures: Vec<_> =
+                                            grep_reg.find_iter(&line).collect();
 
-                                    if !grep_captures.is_empty() {
-                                        grep_patterns += grep_captures.len();
+                                        if !grep_captures.is_empty() {
+                                            grep_patterns += grep_captures.len();
 
-                                        if !count_flag {
-                                            if raw_flag {
-                                                writeln!(
-                                                    handle,
-                                                    "{}",
-                                                    format!("  {}: {}", linenumber, &line)
-                                                )
-                                                .unwrap_or_else(|err| {
-                                                    error!("Error writing to stdout: {err}");
-                                                });
-                                            } else {
-                                                let highlighted_line =
-                                                    highlight_capture(&line, &grep_captures, true);
+                                            if !count_flag {
+                                                if raw_flag {
+                                                    writeln!(
+                                                        handle,
+                                                        "{}",
+                                                        format!("  {}: {}", linenumber, &line)
+                                                    )
+                                                    .unwrap_or_else(|err| {
+                                                        error!("Error writing to stdout: {err}");
+                                                    });
+                                                } else {
+                                                    let highlighted_line = highlight_capture(
+                                                        &line,
+                                                        &grep_captures,
+                                                        true,
+                                                    );
 
-                                                println!(
-                                                    "  {}: {}",
-                                                    linenumber.to_string().truecolor(250, 0, 104),
-                                                    &highlighted_line
-                                                );
+                                                    println!(
+                                                        "  {}: {}",
+                                                        linenumber
+                                                            .to_string()
+                                                            .truecolor(250, 0, 104),
+                                                        &highlighted_line
+                                                    );
+                                                }
                                             }
                                         }
                                     }
@@ -464,6 +473,20 @@ fn sg() -> Command {
                 .num_args(1)
                 .conflicts_with("dir")
                 .value_name("REGEX"),
+        )
+        .arg(
+            Arg::new("matching-files")
+                .short('m')
+                .long("matching-files")
+                .visible_alias("matches")
+                .help("Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines")
+                .long_help(format!(
+                    "{}\n{}",
+                    "Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines",
+                    "Can only be used together with the 'grep' flag",
+                ))
+                .requires("grep")
+                .action(ArgAction::SetTrue),
         )
         .arg(
             Arg::new("no-hidden")
