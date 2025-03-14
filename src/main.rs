@@ -1,11 +1,9 @@
 // TODO refactor
-// TODO add flag to grep mode to only show relevant files that contain the regex
-// TODO     -> don't show the actual matching lines
 use std::{
     env,
     ffi::OsStr,
     fs,
-    io::{self, Write},
+    io::{self, BufWriter, Stdout, Write},
     os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
     process,
@@ -23,7 +21,7 @@ const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
 fn main() {
     // don`t lock stdout, otherwise unable to handle ctrl-c
-    let mut handle = io::BufWriter::with_capacity(BUFFER_CAPACITY, io::stdout());
+    let mut handle = BufWriter::with_capacity(BUFFER_CAPACITY, io::stdout());
 
     // handle Ctrl+C
     ctrlc::set_handler(move || {
@@ -183,7 +181,7 @@ fn main() {
                         continue;
                     }
 
-                    // all pre-filters (via flags) are checked -> start counting entries
+                    // all pre-filters (set via flags) are checked -> start counting entries
                     entry_count += 1;
 
                     let parent = get_parent_path(entry);
@@ -205,9 +203,7 @@ fn main() {
                                 if !count_flag {
                                     if raw_flag {
                                         // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                        writeln!(handle, "{}", fullpath).unwrap_or_else(|err| {
-                                            error!("Error writing to stdout: {err}");
-                                        });
+                                        write_stdout(&mut handle, fullpath);
                                     } else {
                                         let highlighted_name =
                                             highlight_capture(&name, &captures, false);
@@ -228,14 +224,9 @@ fn main() {
                                                 grep_patterns += grep_captures.len();
 
                                                 if raw_flag {
-                                                    writeln!(
-                                                        handle,
-                                                        "{}",
-                                                        format!("  {}: {}", linenumber, &line)
-                                                    )
-                                                    .unwrap_or_else(|err| {
-                                                        error!("Error writing to stdout: {err}");
-                                                    });
+                                                    let line =
+                                                        format!("  {}: {}", linenumber, &line);
+                                                    write_stdout(&mut handle, line);
                                                 } else {
                                                     let highlighted_line = highlight_capture(
                                                         &line,
@@ -260,9 +251,7 @@ fn main() {
                             if !count_flag {
                                 if raw_flag {
                                     // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                    writeln!(handle, "{}", fullpath).unwrap_or_else(|err| {
-                                        error!("Error writing to stdout: {err}");
-                                    });
+                                    write_stdout(&mut handle, fullpath);
                                 } else {
                                     let highlighted_name =
                                         highlight_capture(&name, &captures, false);
@@ -639,6 +628,12 @@ fn get_parent_path(entry: DirEntry) -> String {
         .to_string_lossy()
         .to_string()
         .replace("\\", "/")
+}
+
+fn write_stdout(handle: &mut BufWriter<Stdout>, content: String) {
+    writeln!(handle, "{}", content).unwrap_or_else(|err| {
+        error!("Error writing to stdout: {err}");
+    });
 }
 
 fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String {
