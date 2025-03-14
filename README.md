@@ -67,20 +67,21 @@ Arguments:
   [REGEX] [PATH]  Add a search regex and a path for the file search
 
 Options:
-  -i, --case-insensitive           Search case insensitively
-  -c, --count                      Only print the number of search results
-  -D, --depth <NUMBER>             Set max search depth [default: 250]
-  -d, --dir                        Search only in directory names for the given regex [aliases: directory, directories]
-  -e, --extension <EXTENSIONS>...  Only search in files with the given extensions [aliases: extensions, ext]
-  -E, --exclude <REGEX>...         Exclude regex patterns from the search
-  -f, --file                       Search only in filenames for the regex [aliases: files]
-  -g, --grep <REGEX>               Search for specific regex pattern in files
-  -H, --no-hidden                  Exclude hidden files and directories from search
-  -r, --raw                        Don`t colourize the search output and speed up the output printing
-      --show-errors                Show possible filesystem errors [aliases: show-error]
-  -s, --stats                      Show short search statistics at the end [aliases: statistic, statistics]
-  -h, --help                       Print help (see more with '--help')
-  -V, --version                    Print version
+  -i, --case-insensitive            Search case insensitively
+  -c, --count                       Only print the number of search results
+  -D, --depth <NUMBER>              Set max search depth [default: 1000000]
+  -d, --dir                         Search only in directory names for the given regex [aliases: directory, directories]
+  -e, --extensions <EXTENSIONS>...  Only search in files with the given extensions [aliases: extensions, ext]
+  -E, --exclude <REGEX>...          Exclude regex patterns from the search
+  -f, --file                        Search only in filenames for the regex [aliases: files]
+  -g, --grep <REGEX>                Search for specific regex pattern in files
+  -m, --matching-files              Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines [aliases: matches]
+  -H, --no-hidden                   Exclude hidden files and directories from search
+  -r, --raw                         Don`t colourize the search output and speed up the output printing
+      --show-errors                 Show possible filesystem errors [aliases: show-error]
+  -s, --stats                       Show short search statistics at the end [aliases: statistic, statistics]
+  -h, --help                        Print help (see more with '--help')
+  -V, --version                     Print version
 ```
 
 ### Long Usage
@@ -112,14 +113,14 @@ Options:
   -D, --depth <NUMBER>
           Set max search depth
 
-          [default: 250]
+          [default: 1000000]
 
   -d, --dir
           Search only in directory names for the given regex
 
           [aliases: directory, directories]
 
-  -e, --extension <EXTENSIONS>...
+  -e, --extensions <EXTENSIONS>...
           Only search in files with the given extensions
           Must be provided after the regex and the search path
 
@@ -136,6 +137,12 @@ Options:
 
   -g, --grep <REGEX>
           Search for specific regex pattern in files
+
+  -m, --matching-files
+          Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines
+          Can only be used together with the 'grep' flag
+
+          [aliases: matches]
 
   -H, --no-hidden
           Exclude hidden files and directories from search
