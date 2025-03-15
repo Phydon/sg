@@ -141,42 +141,19 @@ fn main() {
         {
             match entry {
                 Ok(entry) => {
-                    // handle file flag
+                    // handle filetype flags and grep flag
                     // must be outside of function file_check()
                     // else no file will be searched with WalkDir...filter_entry()
-                    if file_flag && !entry.file_type().is_file() {
-                        continue;
-                    }
-
-                    // handle dir flag
-                    // must be outside of function file_check()
-                    // else search stops if dir is found via WalkDir...filter_entry()
-                    if dir_flag && !entry.file_type().is_dir() {
-                        continue;
-                    }
-
-                    // skip entry if grep flag is set and entry not file
-                    if !grep_reg.as_str().is_empty() && !entry.file_type().is_file() {
+                    if !filetype_filter(&entry, &grep_reg, file_flag, dir_flag) {
                         continue;
                     }
 
                     // handle extensions -> skip entry if entry extension doesn't match any given extension via '--extensions' flag
-                    if !extensions.is_empty()
-                        && !extensions.iter().any(|ex| {
-                            &entry
-                                .path()
-                                .extension()
-                                .unwrap_or(&OsStr::new(""))
-                                .to_string_lossy()
-                                .to_string()
-                                == *ex
-                        })
-                    {
+                    if !extension_filter(&entry, &mut extensions) {
                         continue;
                     }
 
                     let name = get_filename(&entry);
-
                     if excludes.is_match(&name) {
                         continue;
                     }
@@ -371,7 +348,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.0.5")
+        .version("1.0.6")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
@@ -678,6 +655,41 @@ fn is_hidden(file_path: &PathBuf) -> std::io::Result<bool> {
     } else {
         Ok(false)
     }
+}
+
+fn filetype_filter(entry: &DirEntry, grep_reg: &Regex, file_flag: bool, dir_flag: bool) -> bool {
+    if file_flag && !entry.file_type().is_file() {
+        return false;
+    }
+
+    if dir_flag && !entry.file_type().is_dir() {
+        return false;
+    }
+
+    // skip entry if grep flag is set and entry not file
+    if !grep_reg.as_str().is_empty() && !entry.file_type().is_file() {
+        return false;
+    }
+
+    true
+}
+
+fn extension_filter(entry: &DirEntry, extensions: &mut Vec<&String>) -> bool {
+    if !extensions.is_empty()
+        && !extensions.iter().any(|ex| {
+            &entry
+                .path()
+                .extension()
+                .unwrap_or(&OsStr::new(""))
+                .to_string_lossy()
+                .to_string()
+                == *ex
+        })
+    {
+        return false;
+    }
+
+    true
 }
 
 // TODO add more examples
