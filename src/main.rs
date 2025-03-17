@@ -1,4 +1,5 @@
 // TODO refactor
+// TODO read path from stdin??
 use std::{
     env,
     ffi::OsStr,
@@ -75,7 +76,7 @@ fn main() {
                 "value required for '[REGEX]', none provided",
             );
             warn!("{}", err);
-            process::exit(1);
+            process::exit(0);
         }
 
         // get search pattern from arguments -> build regex
@@ -276,9 +277,10 @@ fn main() {
         }
 
         // empty bufwriter
-        handle
-            .flush()
-            .unwrap_or_else(|err| error!("Error flushing writer: {err}"));
+        handle.flush().unwrap_or_else(|err| {
+            error!("Error flushing writer: {err}");
+            process::exit(1)
+        });
 
         // format found search hits based on whether grep flag was set or not
         // if grep flag was set, it shows two numbers:
@@ -477,22 +479,6 @@ fn sg() -> Command {
                 ))
                 .action(ArgAction::SetTrue),
         )
-        // TODO remove? (useless???)
-        // .arg(
-        //     Arg::new("override")
-        //         .short('o')
-        //         .long("override")
-        //         .help("Override all previously set flags")
-        //         .long_help(format!(
-        //             "{}\n{}\n{}",
-        //             "Override all previously set flags",
-        //             "This can be used when a custom alias for this command is set together with regularly used flags",
-        //             "This flag allows to disable these flags and specify new ones"
-        //         ))
-        //         // TODO if new args -> add here to this list to override if needed
-        //         .overrides_with_all(["stats", "stats-long", "file", "dir", "extensions", "exclude", "no-hidden", "raw", "count", "show-errors"])
-        //         .action(ArgAction::SetTrue),
-        // )
         .arg(
             Arg::new("raw")
                 .short('r')
@@ -533,19 +519,6 @@ fn sg() -> Command {
                 ))
                 .action(ArgAction::SetTrue),
         )
-        // TODO remove??
-        // .arg(
-        //     Arg::new("stats-long")
-        //         .long("stats-long")
-        //         .help("Show search statistics at the end")
-        //         .long_help(format!(
-        //             "{}\n{}\n{}",
-        //             "Show search statistics at the end",
-        //             "Can be combined with the --count flag to only show stats",
-        //             "Cannot be set together with the --raw flag",
-        //         ))
-        //         .action(ArgAction::SetTrue),
-        // )
         .subcommand(
             Command::new("examples")
                 .long_flag("examples")
@@ -571,8 +544,8 @@ fn set_search_depth(matches: &ArgMatches) -> u32 {
         match d.parse() {
             Ok(depth) => return depth,
             Err(err) => {
-                error!("Expected an integer for the search depth: {err}");
-                process::exit(1);
+                warn!("Expected an integer for the search depth: {err}");
+                process::exit(0);
             }
         }
     } else {
@@ -612,6 +585,7 @@ fn get_parent_path(entry: DirEntry) -> String {
 fn write_stdout(handle: &mut BufWriter<Stdout>, content: String) {
     writeln!(handle, "{}", content).unwrap_or_else(|err| {
         error!("Error writing to stdout: {err}");
+        process::exit(1);
     });
 }
 
@@ -639,7 +613,6 @@ fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String
 
 // check entries if hidden and compare to hidden flag
 fn filter_hidden(entry: &DirEntry, no_hidden_flag: bool) -> bool {
-    // TODO bottleneck
     if no_hidden_flag && is_hidden(&entry.path().to_path_buf()).unwrap_or(false) {
         return false;
     }
