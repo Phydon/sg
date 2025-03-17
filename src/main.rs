@@ -617,7 +617,7 @@ fn filter_hidden(entry: &DirEntry, no_hidden_flag: bool) -> bool {
         return false;
     }
 
-    return true;
+    true
 }
 
 // TODO bottleneck
