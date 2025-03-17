@@ -136,7 +136,7 @@ fn main() {
             .max_depth(depth_flag as usize) // set maximum search depth
             .into_iter()
             // TODO bottleneck if it has to filter out hidden files
-            .filter_entry(|entry| file_check(entry, no_hidden_flag))
+            .filter_entry(|entry| filter_hidden(entry, no_hidden_flag))
         // handle hidden flag
         {
             match entry {
@@ -281,8 +281,8 @@ fn main() {
         // format found search hits based on whether grep flag was set or not
         // if grep flag was set, it shows two numbers:
         //     - for found files containing matches
-        //     - for number if found matches overall
-        // if not it show one number: the numebr of found files containing a match in the filename
+        //     - for number of found matches overall
+        // if not it shows one number: the number of found files containing a match in the filename
         let hits = if !grep_reg.as_str().is_empty() {
             format!("{} {}", grep_files.to_string(), grep_patterns.to_string(),)
         } else {
@@ -292,7 +292,7 @@ fn main() {
         if count_flag && !stats_flag {
             println!("{}", hits);
         } else if stats_flag {
-            // check if hits contains one or two numbers and colourize accordingly
+            // check if hits contain one or two numbers and colourize accordingly
             let hits: Vec<_> = hits.split_whitespace().collect();
             let hits_formated = if hits.len() <= 1 {
                 format!("{}", hits[0].truecolor(59, 179, 140))
@@ -636,7 +636,7 @@ fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String
 }
 
 // check entries if hidden and compare to hidden flag
-fn file_check(entry: &DirEntry, no_hidden_flag: bool) -> bool {
+fn filter_hidden(entry: &DirEntry, no_hidden_flag: bool) -> bool {
     // TODO bottleneck
     if no_hidden_flag && is_hidden(&entry.path().to_path_buf()).unwrap_or(false) {
         return false;
