@@ -153,6 +153,7 @@ fn main() {
                         continue;
                     }
 
+                    // handle excluded patterns
                     let name = get_filename(&entry);
                     if excludes.is_match(&name) {
                         continue;
@@ -171,6 +172,7 @@ fn main() {
 
                         // if grep_flag is set -> search for pattern matches (regex) in files
                         if !grep_reg.as_str().is_empty() {
+                            // TODO show an error here when content unreadable??
                             let content =
                                 fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
 
