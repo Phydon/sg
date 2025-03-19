@@ -15,6 +15,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
+use rayon::prelude::*;
 use regex::{Match, Regex, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
 
@@ -176,8 +177,19 @@ fn main() {
                         // if grep_flag is set -> search for pattern matches (regex) in files
                         if !grep_reg.as_str().is_empty() {
                             // TODO show an error here when content unreadable??
+                            // TODO XXX par this
                             let content =
                                 fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
+
+                            // TODO XXX par this
+                            // let lines = par_split_pipe_by_lines(content);
+                            // lines.into_par_iter().for_each(|line| {
+                            //     let captures = search_regex(&line, re.clone());
+                            //     if let Some(high_line) = highlight_pattern_in_line(line, captures, matches_flag)
+                            //     {
+                            //         println!("{}", high_line);
+                            //     }
+                            // })
 
                             if grep_reg.is_match(&content) {
                                 grep_files += 1;
@@ -195,6 +207,7 @@ fn main() {
                                     }
 
                                     if !matching_files_flag {
+                                        // TODO XXX par this
                                         let mut linenumber = 0;
                                         for line in content.lines() {
                                             linenumber += 1;
@@ -582,6 +595,14 @@ fn get_parent_path(entry: DirEntry) -> String {
         .to_string_lossy()
         .to_string()
         .replace("\\", "/")
+}
+
+fn par_split_pipe_by_lines(content: String) -> Vec<String> {
+    // split content into multiple lines in parallel
+    content
+        .par_lines()
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
 }
 
 fn write_stdout(handle: &mut BufWriter<Stdout>, content: String) {
