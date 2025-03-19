@@ -1,5 +1,5 @@
 // TODO refactor
-// TODO read path from stdin??
+// TODO read path from stdin?? (echo "C:/Directory/" | sg "todoyfixme" -i)
 use std::{
     env,
     ffi::OsStr,
