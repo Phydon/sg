@@ -21,7 +21,7 @@ use walkdir::{DirEntry, WalkDir};
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
 fn main() {
-    // don`t lock stdout, otherwise unable to handle ctrl-c
+    // INFO don`t lock stdout, otherwise unable to handle ctrl-c
     let mut handle = BufWriter::with_capacity(BUFFER_CAPACITY, io::stdout());
 
     // handle Ctrl+C
@@ -69,6 +69,8 @@ fn main() {
         .get_many::<String>("args")
         .map(|a| a.collect::<Vec<_>>())
     {
+        // TODO can this get triggered?
+        // TODO should be handle with Arg::new("args").num_args(2) -> check
         // don't accept emtpy strings like "" (or in powershell `"`")
         if args[0].is_empty() {
             let err = sg().error(
