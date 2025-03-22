@@ -156,22 +156,25 @@ fn main() {
                     error_count.fetch_add(1, Ordering::Relaxed);
 
                     if show_errors_flag {
-                        // let path: &Path = err.path().unwrap_or(Path::new("")).display();
-                        if let Some(inner) = err.into_io_error() {
+                        let path = err.path().unwrap_or(Path::new("")).display();
+                        if let Some(inner) = err.io_error() {
                             match inner.kind() {
                                 io::ErrorKind::InvalidData => {
-                                    warn!("Entry contains invalid data: {}", inner)
+                                    warn!("Entry \'{}\' contains invalid data: {}", path, inner)
                                 }
                                 io::ErrorKind::NotFound => {
-                                    warn!("Entry not found: {}", inner);
+                                    warn!("Entry \'{}\' not found: {}", path, inner);
                                 }
                                 io::ErrorKind::PermissionDenied => {
-                                    warn!("Missing permission to read entry: {}", inner)
+                                    warn!(
+                                        "Missing permission to read entry \'{}\': {}",
+                                        path, inner
+                                    )
                                 }
                                 _ => {
                                     error!(
-                                        "Failed to access entry. Unexpected error occurred: {}",
-                                        inner
+                                        "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
+                                        path, inner
                                     )
                                 }
                             }
