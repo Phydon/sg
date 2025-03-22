@@ -8,6 +8,10 @@ use std::{
     os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
     process,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
     time::Instant,
 };
 
@@ -15,6 +19,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
+use rayon::prelude::*;
 use regex::{Match, Regex, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
 
@@ -22,7 +27,10 @@ const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
 fn main() {
     // INFO don`t lock stdout, otherwise unable to handle ctrl-c
-    let mut handle = BufWriter::with_capacity(BUFFER_CAPACITY, io::stdout());
+    let handle = Arc::new(Mutex::new(BufWriter::with_capacity(
+        BUFFER_CAPACITY,
+        io::stdout(),
+    )));
 
     // handle Ctrl+C
     ctrlc::set_handler(move || {
@@ -126,156 +134,141 @@ fn main() {
         let grep_reg = build_regex(&greps, case_insensitive_flag);
 
         let start = Instant::now();
-        let mut entry_count = 0;
-        let mut error_count = 0;
-        let mut search_hits = 0;
-        let mut grep_files = 0;
-        let mut grep_patterns = 0;
+        let entry_count = Arc::new(AtomicUsize::new(0));
+        let error_count = Arc::new(AtomicUsize::new(0));
+        let search_hits = Arc::new(AtomicUsize::new(0));
+        let grep_files = Arc::new(AtomicUsize::new(0));
+        let grep_patterns = Arc::new(AtomicUsize::new(0));
 
-        for entry in WalkDir::new(path)
+        let entries: Vec<_> = WalkDir::new(path)
             .max_depth(depth_flag as usize) // set maximum search depth
             .into_iter()
             // TODO bottleneck if it has to filter out hidden files
             .filter_entry(|entry| filter_hidden(entry, no_hidden_flag))
+            .collect();
         // handle hidden flag
-        {
-            match entry {
-                Ok(entry) => {
-                    // handle filetype flags and grep flag
-                    // must be outside of function file_check()
-                    // else no file will be searched with WalkDir...filter_entry()
-                    if !filetype_filter(&entry, &grep_reg, file_flag, dir_flag) {
-                        continue;
+
+        entries
+            .into_par_iter()
+            .filter_map(|entry| match entry {
+                Ok(entry) => Some(entry),
+                Err(err) => {
+                    error_count.fetch_add(1, Ordering::Relaxed);
+
+                    if show_errors_flag {
+                        // let path: &Path = err.path().unwrap_or(Path::new("")).display();
+                        if let Some(inner) = err.into_io_error() {
+                            match inner.kind() {
+                                io::ErrorKind::InvalidData => {
+                                    warn!("Entry contains invalid data: {}", inner)
+                                }
+                                io::ErrorKind::NotFound => {
+                                    warn!("Entry not found: {}", inner);
+                                }
+                                io::ErrorKind::PermissionDenied => {
+                                    warn!("Missing permission to read entry: {}", inner)
+                                }
+                                _ => {
+                                    error!(
+                                        "Failed to access entry. Unexpected error occurred: {}",
+                                        inner
+                                    )
+                                }
+                            }
+                        }
                     }
 
-                    // handle extensions -> skip entry if entry extension doesn't match any given extension via '--extensions' flag
-                    if !extension_filter(&entry, &extensions) {
-                        continue;
-                    }
+                    None
+                }
+            })
+            .filter(|e| filetype_filter(e, &grep_reg, file_flag, dir_flag))
+            .filter(|e| extension_filter(e, &extensions))
+            .filter(|e| {
+                let name = get_filename(&e);
+                !excludes.is_match(&name)
+            })
+            .for_each(|entry| {
+                // all pre-filters (set via flags) are checked -> start counting entries
+                entry_count.fetch_add(1, Ordering::Relaxed);
 
-                    // handle excluded patterns
-                    let name = get_filename(&entry);
-                    if excludes.is_match(&name) {
-                        continue;
-                    }
+                let name = get_filename(&entry);
+                let parent = get_parent_path(entry);
+                let fullpath = format!("{}/{}", parent, name);
 
-                    // all pre-filters (set via flags) are checked -> start counting entries
-                    entry_count += 1;
+                // search for a pattern match (regex) in the remaining entries
+                let captures: Vec<_> = reg.find_iter(&name).collect();
+                if !captures.is_empty() {
+                    search_hits.fetch_add(1, Ordering::Relaxed);
 
-                    let parent = get_parent_path(entry);
-                    let fullpath = format!("{}/{}", parent, name);
+                    // if grep_flag is set -> search for pattern matches (regex) in files
+                    if !grep_reg.as_str().is_empty() {
+                        // TODO show an error here when content unreadable??
+                        let content =
+                            fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
+                        if grep_reg.is_match(&content) {
+                            grep_files.fetch_add(1, Ordering::Relaxed);
 
-                    // search for a pattern match (regex) in the remaining entries
-                    let captures: Vec<_> = reg.find_iter(&name).collect();
-                    if !captures.is_empty() {
-                        search_hits += 1;
+                            if !count_flag {
+                                if raw_flag {
+                                    // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                                    write_stdout(&handle, fullpath);
+                                } else {
+                                    let highlighted_name =
+                                        highlight_capture(&name, &captures, false);
+                                    let highlighted_path = parent + "/" + &highlighted_name;
+                                    // TODO check if terminal accepts clickable paths
+                                    println!("file://{}", highlighted_path);
+                                }
 
-                        // if grep_flag is set -> search for pattern matches (regex) in files
-                        if !grep_reg.as_str().is_empty() {
-                            // TODO show an error here when content unreadable??
-                            let content =
-                                fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
-                            if grep_reg.is_match(&content) {
-                                grep_files += 1;
+                                if !matching_files_flag {
+                                    let mut linenumber = 0;
+                                    for line in content.lines() {
+                                        linenumber += 1;
+                                        let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                        let grep_captures: Vec<_> =
+                                            grep_reg.find_iter(&line).collect();
 
-                                if !count_flag {
-                                    if raw_flag {
-                                        // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                        write_stdout(&mut handle, fullpath);
-                                    } else {
-                                        let highlighted_name =
-                                            highlight_capture(&name, &captures, false);
-                                        let highlighted_path = parent + "/" + &highlighted_name;
-                                        // TODO check if terminal accepts clickable paths
-                                        println!("file://{}", highlighted_path);
-                                    }
+                                        if !grep_captures.is_empty() {
+                                            grep_patterns
+                                                .fetch_add(grep_captures.len(), Ordering::Relaxed);
 
-                                    if !matching_files_flag {
-                                        let mut linenumber = 0;
-                                        for line in content.lines() {
-                                            linenumber += 1;
-                                            let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                            let grep_captures: Vec<_> =
-                                                grep_reg.find_iter(&line).collect();
+                                            if raw_flag {
+                                                let line = format!("  {}: {}", linenumber, &line);
+                                                write_stdout(&handle, line);
+                                            } else {
+                                                let highlighted_line =
+                                                    highlight_capture(&line, &grep_captures, true);
 
-                                            if !grep_captures.is_empty() {
-                                                grep_patterns += grep_captures.len();
-
-                                                if raw_flag {
-                                                    let line =
-                                                        format!("  {}: {}", linenumber, &line);
-                                                    write_stdout(&mut handle, line);
-                                                } else {
-                                                    let highlighted_line = highlight_capture(
-                                                        &line,
-                                                        &grep_captures,
-                                                        true,
-                                                    );
-
-                                                    println!(
-                                                        "  {}: {}",
-                                                        linenumber
-                                                            .to_string()
-                                                            .truecolor(250, 0, 104),
-                                                        &highlighted_line
-                                                    );
-                                                }
+                                                println!(
+                                                    "  {}: {}",
+                                                    linenumber.to_string().truecolor(250, 0, 104),
+                                                    &highlighted_line
+                                                );
                                             }
                                         }
                                     }
                                 }
                             }
-                        } else {
-                            if !count_flag {
-                                if raw_flag {
-                                    // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                    write_stdout(&mut handle, fullpath);
-                                } else {
-                                    let highlighted_name =
-                                        highlight_capture(&name, &captures, false);
+                        }
+                    } else {
+                        if !count_flag {
+                            if raw_flag {
+                                // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                                write_stdout(&handle, fullpath);
+                            } else {
+                                let highlighted_name = highlight_capture(&name, &captures, false);
 
-                                    let highlighted_path = parent + "/" + &highlighted_name;
-                                    // TODO check if terminal accepts clickable paths
-                                    println!("file://{}", highlighted_path);
-                                }
+                                let highlighted_path = parent + "/" + &highlighted_name;
+                                // TODO check if terminal accepts clickable paths
+                                println!("file://{}", highlighted_path);
                             }
                         }
                     }
                 }
-                Err(err) => {
-                    error_count += 1;
-
-                    if show_errors_flag {
-                        let path = err.path().unwrap_or(Path::new("")).display();
-                        if let Some(inner) = err.io_error() {
-                            match inner.kind() {
-                                io::ErrorKind::InvalidData => {
-                                    warn!("Entry \'{}\' contains invalid data: {}", path, inner)
-                                }
-                                io::ErrorKind::NotFound => {
-                                    warn!("Entry \'{}\' not found: {}", path, inner);
-                                }
-                                io::ErrorKind::PermissionDenied => {
-                                    warn!(
-                                        "Missing permission to read entry \'{}\': {}",
-                                        path, inner
-                                    )
-                                }
-                                _ => {
-                                    error!(
-                                        "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
-                                        path, inner
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+            });
 
         // empty bufwriter
-        handle.flush().unwrap_or_else(|err| {
+        handle.lock().unwrap().flush().unwrap_or_else(|err| {
             error!("Error flushing writer: {err}");
             process::exit(1)
         });
@@ -286,9 +279,13 @@ fn main() {
         //     - for number of found matches overall
         // if not it shows one number: the number of found files containing a match in the filename
         let hits = if !grep_reg.as_str().is_empty() {
-            format!("{} {}", grep_files.to_string(), grep_patterns.to_string(),)
+            format!(
+                "{} {}",
+                grep_files.load(Ordering::Relaxed).to_string(),
+                grep_patterns.load(Ordering::Relaxed).to_string(),
+            )
         } else {
-            search_hits.to_string()
+            search_hits.load(Ordering::Relaxed).to_string()
         };
 
         if count_flag && !stats_flag {
@@ -309,8 +306,8 @@ fn main() {
             println!(
                 "[{}  {} {} {}]",
                 format!("{:?}", start.elapsed()).bright_blue(),
-                entry_count.to_string().dimmed(),
-                error_count.to_string().bright_red(),
+                entry_count.load(Ordering::Relaxed).to_string().dimmed(),
+                error_count.load(Ordering::Relaxed).to_string().bright_red(),
                 hits_formated
             );
         }
@@ -580,8 +577,9 @@ fn get_parent_path(entry: DirEntry) -> String {
         .replace("\\", "/")
 }
 
-fn write_stdout(handle: &mut BufWriter<Stdout>, content: String) {
-    writeln!(handle, "{}", content).unwrap_or_else(|err| {
+fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: String) {
+    let mut handle_lock = handle.lock().unwrap();
+    writeln!(handle_lock, "{}", content).unwrap_or_else(|err| {
         error!("Error writing to stdout: {err}");
         process::exit(1);
     });
