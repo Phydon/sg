@@ -97,22 +97,18 @@ fn main() {
         }
 
         // get possible file extensions for filtering
-        let mut extensions = Vec::new();
-        if let Some(mut ext) = matches
+        let extensions: Vec<String> = matches
             .get_many::<String>("extensions")
-            .map(|a| a.collect::<Vec<_>>())
-        {
-            extensions.append(&mut ext);
-        }
+            .map(|a| a.cloned().collect::<Vec<_>>())
+            // TODO what is the default value here?
+            .unwrap_or_default();
 
         // get exclude patterns
-        let mut exclude_patterns = Vec::new();
-        if let Some(mut excludes) = matches
+        let exclude_patterns: Vec<String> = matches
             .get_many::<String>("exclude")
-            .map(|a| a.collect::<Vec<_>>())
-        {
-            exclude_patterns.append(&mut excludes);
-        }
+            .map(|a| a.cloned().collect::<Vec<_>>())
+            // TODO what is the default value here?
+            .unwrap_or_default();
 
         // store exclude patterns in regex set
         let excludes = RegexSet::new(exclude_patterns).unwrap_or_else(|err| {
@@ -121,10 +117,11 @@ fn main() {
         });
 
         // handle grep flag
-        let mut greps = String::new();
-        if let Some(grep_pattern) = matches.get_one::<String>("grep") {
-            greps.push_str(&grep_pattern);
-        }
+        let greps: String = matches
+            .get_one::<String>("grep")
+            // TODO handle unwrap
+            .unwrap_or(&String::new())
+            .to_string();
 
         let grep_reg = build_regex(&greps, case_insensitive_flag);
 
@@ -152,7 +149,7 @@ fn main() {
                     }
 
                     // handle extensions -> skip entry if entry extension doesn't match any given extension via '--extensions' flag
-                    if !extension_filter(&entry, &mut extensions) {
+                    if !extension_filter(&entry, &extensions) {
                         continue;
                     }
 
@@ -650,10 +647,10 @@ fn filetype_filter(entry: &DirEntry, grep_reg: &Regex, file_flag: bool, dir_flag
     true
 }
 
-fn extension_filter(entry: &DirEntry, extensions: &mut Vec<&String>) -> bool {
+fn extension_filter(entry: &DirEntry, extensions: &Vec<String>) -> bool {
     if !extensions.is_empty()
         && !extensions.iter().any(|ex| {
-            &entry
+            entry
                 .path()
                 .extension()
                 .unwrap_or(&OsStr::new(""))
