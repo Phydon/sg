@@ -127,7 +127,6 @@ fn main() {
         // handle grep flag
         let greps: String = matches
             .get_one::<String>("grep")
-            // TODO handle unwrap
             .unwrap_or(&String::new())
             .to_string();
 
@@ -140,6 +139,7 @@ fn main() {
         let grep_files = Arc::new(AtomicUsize::new(0));
         let grep_patterns = Arc::new(AtomicUsize::new(0));
 
+        // TODO massive memory usage here -> optimize
         let entries: Vec<_> = WalkDir::new(path)
             .max_depth(depth_flag as usize) // set maximum search depth
             .into_iter()
@@ -148,6 +148,8 @@ fn main() {
             .collect();
         // handle hidden flag
 
+        // TODO use threadpool to control number of cpus
+        // TODO new flag -> enter number of cpus
         entries
             .into_par_iter()
             .filter_map(|entry| match entry {
@@ -281,6 +283,11 @@ fn main() {
         //     - for found files containing matches
         //     - for number of found matches overall
         // if not it shows one number: the number of found files containing a match in the filename
+        // TODO how to handle -m flag here?
+        // TODO     -> still show '0' grep_hits
+        //             (currently the case, because we don`t search in files if at least one match identified)
+        //                 -> good enough for -m flag to identify a file containing at least one match
+        // TODO     -> or remove the '0' as well and only show number of search_hits
         let hits = if !grep_reg.as_str().is_empty() {
             format!(
                 "{} {}",
@@ -350,7 +357,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.0.6")
+        .version("1.1.0")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
