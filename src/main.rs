@@ -207,7 +207,7 @@ fn main() {
                 // if grep_flag is set -> search for pattern matches (regex) in files
                 if !grep_reg.as_str().is_empty() {
                     // TODO show an error here when content unreadable??
-                    // TODO reduce memory usage -> instead of read_to_string() maybe use io::BufReader::new(&fullpath)??
+                    // TODO XXX reduce memory usage -> instead of read_to_string() maybe use io::BufReader::new(&fullpath)??
                     let content = fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
                     if grep_reg.is_match(&content) {
                         grep_files.fetch_add(1, Ordering::Relaxed);
@@ -354,7 +354,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.1.0")
+        .version("1.1.1")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
