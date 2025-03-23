@@ -146,7 +146,6 @@ fn main() {
             // TODO bottleneck if it has to filter out hidden files
             .filter_entry(|entry| filter_hidden(entry, no_hidden_flag))
             .collect();
-        // handle hidden flag
 
         // TODO use threadpool to control number of cpus
         // TODO new flag -> enter number of cpus
@@ -193,84 +192,82 @@ fn main() {
                 !excludes.is_match(&name)
             })
             .for_each(|entry| {
-                // all pre-filters (set via flags) are checked -> start counting entries
-                entry_count.fetch_add(1, Ordering::Relaxed);
+            // all pre-filters (set via flags) are checked -> start counting entries
+            entry_count.fetch_add(1, Ordering::Relaxed);
 
-                let name = get_filename(&entry);
-                let parent = get_parent_path(entry);
-                let fullpath = format!("{}/{}", parent, name);
+            let name = get_filename(&entry);
+            let parent = get_parent_path(entry);
+            let fullpath = format!("{}/{}", parent, name);
 
-                // search for a pattern match (regex) in the remaining entries
-                let captures: Vec<_> = reg.find_iter(&name).collect();
-                if !captures.is_empty() {
-                    search_hits.fetch_add(1, Ordering::Relaxed);
+            // search for a pattern match (regex) in the remaining entries
+            let captures: Vec<_> = reg.find_iter(&name).collect();
+            if !captures.is_empty() {
+                search_hits.fetch_add(1, Ordering::Relaxed);
 
-                    // if grep_flag is set -> search for pattern matches (regex) in files
-                    if !grep_reg.as_str().is_empty() {
-                        // TODO show an error here when content unreadable??
-                        let content =
-                            fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
-                        if grep_reg.is_match(&content) {
-                            grep_files.fetch_add(1, Ordering::Relaxed);
+                // if grep_flag is set -> search for pattern matches (regex) in files
+                if !grep_reg.as_str().is_empty() {
+                    // TODO show an error here when content unreadable??
+                    // TODO reduce memory usage -> instead of read_to_string() maybe use io::BufReader::new(&fullpath)??
+                    let content = fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
+                    if grep_reg.is_match(&content) {
+                        grep_files.fetch_add(1, Ordering::Relaxed);
 
-                            if !count_flag {
-                                if raw_flag {
-                                    // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                    write_stdout(&handle, fullpath);
-                                } else {
-                                    let highlighted_name =
-                                        highlight_capture(&name, &captures, false);
-                                    let highlighted_path = parent + "/" + &highlighted_name;
-                                    // TODO check if terminal accepts clickable paths
-                                    println!("file://{}", highlighted_path);
-                                }
-
-                                if !matching_files_flag {
-                                    let mut linenumber = 0;
-                                    for line in content.lines() {
-                                        linenumber += 1;
-                                        let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                        let grep_captures: Vec<_> =
-                                            grep_reg.find_iter(&line).collect();
-
-                                        if !grep_captures.is_empty() {
-                                            grep_patterns
-                                                .fetch_add(grep_captures.len(), Ordering::Relaxed);
-
-                                            if raw_flag {
-                                                let line = format!("  {}: {}", linenumber, &line);
-                                                write_stdout(&handle, line);
-                                            } else {
-                                                let highlighted_line =
-                                                    highlight_capture(&line, &grep_captures, true);
-
-                                                println!(
-                                                    "  {}: {}",
-                                                    linenumber.to_string().truecolor(250, 0, 104),
-                                                    &highlighted_line
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
                         if !count_flag {
                             if raw_flag {
                                 // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
                                 write_stdout(&handle, fullpath);
                             } else {
                                 let highlighted_name = highlight_capture(&name, &captures, false);
-
                                 let highlighted_path = parent + "/" + &highlighted_name;
                                 // TODO check if terminal accepts clickable paths
                                 println!("file://{}", highlighted_path);
                             }
+
+                            if !matching_files_flag {
+                                let mut linenumber = 0;
+                                for line in content.lines() {
+                                    linenumber += 1;
+                                    let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                    let grep_captures: Vec<_> = grep_reg.find_iter(&line).collect();
+
+                                    if !grep_captures.is_empty() {
+                                        grep_patterns
+                                            .fetch_add(grep_captures.len(), Ordering::Relaxed);
+
+                                        if raw_flag {
+                                            let line = format!("  {}: {}", linenumber, &line);
+                                            write_stdout(&handle, line);
+                                        } else {
+                                            let highlighted_line =
+                                                highlight_capture(&line, &grep_captures, true);
+
+                                            println!(
+                                                "  {}: {}",
+                                                linenumber.to_string().truecolor(250, 0, 104),
+                                                &highlighted_line
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if !count_flag {
+                        if raw_flag {
+                            // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                            write_stdout(&handle, fullpath);
+                        } else {
+                            let highlighted_name = highlight_capture(&name, &captures, false);
+
+                            let highlighted_path = parent + "/" + &highlighted_name;
+                            // TODO check if terminal accepts clickable paths
+                            println!("file://{}", highlighted_path);
                         }
                     }
                 }
-            });
+            }
+        });
 
         // empty bufwriter
         handle.lock().unwrap().flush().unwrap_or_else(|err| {
