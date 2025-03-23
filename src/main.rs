@@ -19,7 +19,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
-use rayon::prelude::*;
+use rayon::{current_num_threads, prelude::*};
 use regex::{Match, Regex, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
 
@@ -139,134 +139,133 @@ fn main() {
         let grep_files = Arc::new(AtomicUsize::new(0));
         let grep_patterns = Arc::new(AtomicUsize::new(0));
 
-        // TODO massive memory usage here -> optimize
-        let entries: Vec<_> = WalkDir::new(path)
-            .max_depth(depth_flag as usize) // set maximum search depth
-            .into_iter()
-            // TODO bottleneck if it has to filter out hidden files
-            .filter_entry(|entry| filter_hidden(entry, no_hidden_flag))
-            .collect();
+        let entries = collect_entries(path, depth_flag, no_hidden_flag);
+
+        let chunk_size = calculate_chunk_size();
 
         // TODO use threadpool to control number of cpus
         // TODO new flag -> enter number of cpus
         entries
-            .into_par_iter()
-            .filter_map(|entry| match entry {
-                Ok(entry) => Some(entry),
-                Err(err) => {
-                    error_count.fetch_add(1, Ordering::Relaxed);
+            // .into_par_iter()
+            .par_chunks(chunk_size)
+            .for_each(|chunk| {
+                chunk.into_par_iter()
+                .filter_map(|entry| match entry {
+                    Ok(entry) => Some(entry),
+                    Err(err) => {
+                        error_count.fetch_add(1, Ordering::Relaxed);
 
-                    if show_errors_flag {
-                        let path = err.path().unwrap_or(Path::new("")).display();
-                        if let Some(inner) = err.io_error() {
-                            match inner.kind() {
-                                io::ErrorKind::InvalidData => {
-                                    warn!("Entry \'{}\' contains invalid data: {}", path, inner)
-                                }
-                                io::ErrorKind::NotFound => {
-                                    warn!("Entry \'{}\' not found: {}", path, inner);
-                                }
-                                io::ErrorKind::PermissionDenied => {
-                                    warn!(
-                                        "Missing permission to read entry \'{}\': {}",
-                                        path, inner
-                                    )
-                                }
-                                _ => {
-                                    error!(
-                                        "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
-                                        path, inner
-                                    )
+                        if show_errors_flag {
+                            let path = err.path().unwrap_or(Path::new("")).display();
+                            if let Some(inner) = err.io_error() {
+                                match inner.kind() {
+                                    io::ErrorKind::InvalidData => {
+                                        warn!("Entry \'{}\' contains invalid data: {}", path, inner)
+                                    }
+                                    io::ErrorKind::NotFound => {
+                                        warn!("Entry \'{}\' not found: {}", path, inner);
+                                    }
+                                    io::ErrorKind::PermissionDenied => {
+                                        warn!(
+                                            "Missing permission to read entry \'{}\': {}",
+                                            path, inner
+                                        )
+                                    }
+                                    _ => {
+                                        error!(
+                                            "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
+                                            path, inner
+                                        )
+                                    }
                                 }
                             }
                         }
+
+                        None
                     }
+                })
+                .filter(|e| filetype_filter(e, &grep_reg, file_flag, dir_flag))
+                .filter(|e| extension_filter(e, &extensions))
+                .filter(|e| {
+                    let name = get_filename(&e);
+                    !excludes.is_match(&name)
+                })
+                .for_each(|entry| {
+                // all pre-filters (set via flags) are checked -> start counting entries
+                entry_count.fetch_add(1, Ordering::Relaxed);
 
-                    None
-                }
-            })
-            .filter(|e| filetype_filter(e, &grep_reg, file_flag, dir_flag))
-            .filter(|e| extension_filter(e, &extensions))
-            .filter(|e| {
-                let name = get_filename(&e);
-                !excludes.is_match(&name)
-            })
-            .for_each(|entry| {
-            // all pre-filters (set via flags) are checked -> start counting entries
-            entry_count.fetch_add(1, Ordering::Relaxed);
+                let name = get_filename(&entry);
+                let parent = get_parent_path(entry.clone());
+                let fullpath = format!("{}/{}", parent, name);
 
-            let name = get_filename(&entry);
-            let parent = get_parent_path(entry);
-            let fullpath = format!("{}/{}", parent, name);
+                // search for a pattern match (regex) in the remaining entries
+                let captures: Vec<_> = reg.find_iter(&name).collect();
+                if !captures.is_empty() {
+                    search_hits.fetch_add(1, Ordering::Relaxed);
 
-            // search for a pattern match (regex) in the remaining entries
-            let captures: Vec<_> = reg.find_iter(&name).collect();
-            if !captures.is_empty() {
-                search_hits.fetch_add(1, Ordering::Relaxed);
+                    // if grep_flag is set -> search for pattern matches (regex) in files
+                    if !grep_reg.as_str().is_empty() {
+                        // TODO show an error here when content unreadable??
+                        let content = fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
+                        if grep_reg.is_match(&content) {
+                            grep_files.fetch_add(1, Ordering::Relaxed);
 
-                // if grep_flag is set -> search for pattern matches (regex) in files
-                if !grep_reg.as_str().is_empty() {
-                    // TODO show an error here when content unreadable??
-                    // TODO XXX reduce memory usage -> instead of read_to_string() maybe use io::BufReader::new(&fullpath)??
-                    let content = fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
-                    if grep_reg.is_match(&content) {
-                        grep_files.fetch_add(1, Ordering::Relaxed);
+                            if !count_flag {
+                                if raw_flag {
+                                    // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                                    write_stdout(&handle, fullpath);
+                                } else {
+                                    let highlighted_name = highlight_capture(&name, &captures, false);
+                                    let highlighted_path = parent + "/" + &highlighted_name;
+                                    // TODO check if terminal accepts clickable paths
+                                    println!("file://{}", highlighted_path);
+                                }
 
+                                if !matching_files_flag {
+                                    let mut linenumber = 0;
+                                    for line in content.lines() {
+                                        linenumber += 1;
+                                        let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                        let grep_captures: Vec<_> = grep_reg.find_iter(&line).collect();
+
+                                        if !grep_captures.is_empty() {
+                                            grep_patterns
+                                                .fetch_add(grep_captures.len(), Ordering::Relaxed);
+
+                                            if raw_flag {
+                                                let line = format!("  {}: {}", linenumber, &line);
+                                                write_stdout(&handle, line);
+                                            } else {
+                                                let highlighted_line =
+                                                    highlight_capture(&line, &grep_captures, true);
+
+                                                println!(
+                                                    "  {}: {}",
+                                                    linenumber.to_string().truecolor(250, 0, 104),
+                                                    &highlighted_line
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
                         if !count_flag {
                             if raw_flag {
                                 // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
                                 write_stdout(&handle, fullpath);
                             } else {
                                 let highlighted_name = highlight_capture(&name, &captures, false);
+
                                 let highlighted_path = parent + "/" + &highlighted_name;
                                 // TODO check if terminal accepts clickable paths
                                 println!("file://{}", highlighted_path);
                             }
-
-                            if !matching_files_flag {
-                                let mut linenumber = 0;
-                                for line in content.lines() {
-                                    linenumber += 1;
-                                    let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                    let grep_captures: Vec<_> = grep_reg.find_iter(&line).collect();
-
-                                    if !grep_captures.is_empty() {
-                                        grep_patterns
-                                            .fetch_add(grep_captures.len(), Ordering::Relaxed);
-
-                                        if raw_flag {
-                                            let line = format!("  {}: {}", linenumber, &line);
-                                            write_stdout(&handle, line);
-                                        } else {
-                                            let highlighted_line =
-                                                highlight_capture(&line, &grep_captures, true);
-
-                                            println!(
-                                                "  {}: {}",
-                                                linenumber.to_string().truecolor(250, 0, 104),
-                                                &highlighted_line
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    if !count_flag {
-                        if raw_flag {
-                            // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                            write_stdout(&handle, fullpath);
-                        } else {
-                            let highlighted_name = highlight_capture(&name, &captures, false);
-
-                            let highlighted_path = parent + "/" + &highlighted_name;
-                            // TODO check if terminal accepts clickable paths
-                            println!("file://{}", highlighted_path);
                         }
                     }
                 }
-            }
+            });
         });
 
         // empty bufwriter
@@ -568,6 +567,35 @@ fn build_regex(patterns: &str, case_insensitive_flag: bool) -> Regex {
         });
 
     reg
+}
+
+fn collect_entries(
+    path: PathBuf,
+    depth_flag: u32,
+    no_hidden_flag: bool,
+) -> Vec<Result<DirEntry, walkdir::Error>> {
+    // TODO massive memory usage here -> optimize
+    let entries: Vec<_> = WalkDir::new(path)
+        .max_depth(depth_flag as usize) // set maximum search depth
+        .into_iter()
+        // TODO bottleneck if it has to filter out hidden files
+        .filter_entry(|entry| filter_hidden(entry, no_hidden_flag))
+        .collect();
+
+    entries
+}
+
+fn calculate_chunk_size() -> usize {
+    // TODO dynamically adjust chunk_size
+    //     - Few files (<100)                        => 1 (no chunks, process individually)
+    //     - Moderate workload (100-10k files)       => 8-16 (balanced performance)
+    //     - Huge workload (10k+ files)	             => 4 × CPU cores (aggressive batching)
+    // OR
+    //     - If files are small and fast to process  => Larger chunks (8-64)
+    //     - If files are large and slow to process  => Smaller chunks (4-8)
+    //     - If CPU has many cores (16+ threads)     =>  Larger chunks (16-64)
+    //     - If CPU has few cores (4-8 threads)      => Smaller chunks (4-16)
+    current_num_threads()
 }
 
 fn get_filename(entry: &DirEntry) -> String {
