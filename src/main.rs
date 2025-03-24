@@ -142,7 +142,6 @@ fn main() {
         let entries = collect_entries(path, depth_flag, no_hidden_flag);
 
         let chunk_size = calculate_chunk_size(entries.len());
-        dbg!(&chunk_size); // TODO remove
 
         // TODO use threadpool to control number of cpus
         // TODO new flag -> enter number of cpus
@@ -266,25 +265,7 @@ fn main() {
             process::exit(1)
         });
 
-        // format found search hits based on whether grep flag was set or not
-        // if grep flag was set, it shows two numbers:
-        //     - for found files containing matches
-        //     - for number of found matches overall
-        // if not it shows one number: the number of found files containing a match in the filename
-        // TODO how to handle -m flag here?
-        // TODO     -> still show '0' grep_hits
-        //             (currently the case, because we don`t search in files if at least one match identified)
-        //                 -> good enough for -m flag to identify a file containing at least one match
-        // TODO     -> or remove the '0' as well and only show number of search_hits
-        let hits = if !grep_reg.as_str().is_empty() {
-            format!(
-                "{} {}",
-                grep_files.load(Ordering::Relaxed).to_string(),
-                grep_patterns.load(Ordering::Relaxed).to_string(),
-            )
-        } else {
-            search_hits.load(Ordering::Relaxed).to_string()
-        };
+        let hits = format_hits(grep_reg, grep_files, grep_patterns, search_hits);
 
         if count_flag && !stats_flag {
             println!("{}", hits);
@@ -577,6 +558,7 @@ fn collect_entries(
     entries
 }
 
+// TODO benchmark different sizes
 // TODO how to determin the right chunk size?
 // TODO Ideas:
 // TODO     - based on L2/L3 cache size
@@ -593,7 +575,8 @@ fn calculate_chunk_size(num_entries: usize) -> usize {
     // INFO     - If CPU has few cores (4-8 threads)         => Smaller chunks (4-16)
     match num_entries {
         0..=1000 => 1 as usize,
-        1001..=100000 => current_num_threads() / 2, // TODO maybe use 8 here??
+        1001..=10000 => current_num_threads() / 4,
+        10001..=100000 => current_num_threads() / 2,
         100001.. => current_num_threads(),
     }
 }
@@ -723,6 +706,35 @@ fn show_errors(err: &walkdir::Error) {
             }
         }
     }
+}
+
+fn format_hits(
+    grep_reg: Regex,
+    grep_files: Arc<AtomicUsize>,
+    grep_patterns: Arc<AtomicUsize>,
+    search_hits: Arc<AtomicUsize>,
+) -> String {
+    // format found search hits based on whether grep flag was set or not
+    // if grep flag was set, it shows two numbers:
+    //     - for found files containing matches
+    //     - for number of found matches overall
+    // if the grep flag was not set it shows one number: the number of found files containing a match inside the filename
+    // TODO how to handle -m flag here?
+    // TODO     -> still show '0' grep_hits
+    //             (currently the case, because we don`t search in files if at least one match identified)
+    //                 -> good enough for -m flag to identify a file containing at least one match
+    // TODO     -> or remove the '0' as well and only show number of search_hits
+    let hits = if !grep_reg.as_str().is_empty() {
+        format!(
+            "{} {}",
+            grep_files.load(Ordering::Relaxed).to_string(),
+            grep_patterns.load(Ordering::Relaxed).to_string(),
+        )
+    } else {
+        search_hits.load(Ordering::Relaxed).to_string()
+    };
+
+    hits
 }
 
 // TODO add more examples
