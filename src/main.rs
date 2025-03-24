@@ -164,10 +164,10 @@ fn main() {
                             None
                         }
                     })
-                    .filter(|e| filetype_filter(e, &grep_reg, file_flag, dir_flag))
-                    .filter(|e| extension_filter(e, &extensions))
-                    .filter(|e| {
-                        let name = get_filename(&e);
+                    .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
+                    .filter(|entry| extension_filter(entry, &extensions))
+                    .filter(|entry| {
+                        let name = get_filename(&entry);
                         !excludes.is_match(&name)
                     })
                     .for_each(|entry| {
