@@ -627,7 +627,10 @@ fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: String) {
 fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String {
     assert!(!captures.is_empty());
 
-    let mut new = String::with_capacity(content.len());
+    // pre-allocate enough memory for original content + estimated additional space for ANSI codes (est. each color adds ~20 bytes)
+    // this reduces the number of times the string's buffer needs to be reallocated as elements are added
+    let mut new = String::with_capacity(content.len() + captures.len() * 20);
+
     let mut last_match = 0;
     for cap in captures {
         new.push_str(&content[last_match..cap.start()]);
@@ -639,6 +642,7 @@ fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String
             cap.as_str().truecolor(59, 179, 140).to_string()
         };
         new.push_str(&pattern);
+
         last_match = cap.end();
     }
     new.push_str(&content[last_match..]);
