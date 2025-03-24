@@ -150,124 +150,115 @@ fn main() {
             // .into_par_iter()
             .par_chunks(chunk_size)
             .for_each(|chunk| {
-                chunk.into_par_iter()
-                .filter_map(|entry| match entry {
-                    Ok(entry) => Some(entry),
-                    Err(err) => {
-                        error_count.fetch_add(1, Ordering::Relaxed);
+                chunk
+                    .into_par_iter() // TODO FIXME more scheduling overhead when using par iter here?
+                    .filter_map(|entry| match entry {
+                        Ok(entry) => Some(entry),
+                        Err(err) => {
+                            error_count.fetch_add(1, Ordering::Relaxed);
 
-                        if show_errors_flag {
-                            let path = err.path().unwrap_or(Path::new("")).display();
-                            if let Some(inner) = err.io_error() {
-                                match inner.kind() {
-                                    io::ErrorKind::InvalidData => {
-                                        warn!("Entry \'{}\' contains invalid data: {}", path, inner)
-                                    }
-                                    io::ErrorKind::NotFound => {
-                                        warn!("Entry \'{}\' not found: {}", path, inner);
-                                    }
-                                    io::ErrorKind::PermissionDenied => {
-                                        warn!(
-                                            "Missing permission to read entry \'{}\': {}",
-                                            path, inner
-                                        )
-                                    }
-                                    _ => {
-                                        error!(
-                                            "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
-                                            path, inner
-                                        )
-                                    }
-                                }
+                            if show_errors_flag {
+                                show_errors(err);
                             }
+
+                            None
                         }
+                    })
+                    .filter(|e| filetype_filter(e, &grep_reg, file_flag, dir_flag))
+                    .filter(|e| extension_filter(e, &extensions))
+                    .filter(|e| {
+                        let name = get_filename(&e);
+                        !excludes.is_match(&name)
+                    })
+                    .for_each(|entry| {
+                        // all pre-filters (set via flags) are checked -> start counting entries
+                        entry_count.fetch_add(1, Ordering::Relaxed);
 
-                        None
-                    }
-                })
-                .filter(|e| filetype_filter(e, &grep_reg, file_flag, dir_flag))
-                .filter(|e| extension_filter(e, &extensions))
-                .filter(|e| {
-                    let name = get_filename(&e);
-                    !excludes.is_match(&name)
-                })
-                .for_each(|entry| {
-                // all pre-filters (set via flags) are checked -> start counting entries
-                entry_count.fetch_add(1, Ordering::Relaxed);
+                        let name = get_filename(&entry);
+                        let parent = get_parent_path(entry.clone());
+                        let fullpath = format!("{}/{}", parent, name);
 
-                let name = get_filename(&entry);
-                let parent = get_parent_path(entry.clone());
-                let fullpath = format!("{}/{}", parent, name);
+                        // search for a pattern match (regex) in the remaining entries
+                        let captures: Vec<_> = reg.find_iter(&name).collect();
+                        if !captures.is_empty() {
+                            search_hits.fetch_add(1, Ordering::Relaxed);
 
-                // search for a pattern match (regex) in the remaining entries
-                let captures: Vec<_> = reg.find_iter(&name).collect();
-                if !captures.is_empty() {
-                    search_hits.fetch_add(1, Ordering::Relaxed);
+                            // if grep_flag is set -> search for pattern matches (regex) in files
+                            if !grep_reg.as_str().is_empty() {
+                                // TODO show an error here when content unreadable??
+                                let content =
+                                    fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
+                                if grep_reg.is_match(&content) {
+                                    grep_files.fetch_add(1, Ordering::Relaxed);
 
-                    // if grep_flag is set -> search for pattern matches (regex) in files
-                    if !grep_reg.as_str().is_empty() {
-                        // TODO show an error here when content unreadable??
-                        let content = fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
-                        if grep_reg.is_match(&content) {
-                            grep_files.fetch_add(1, Ordering::Relaxed);
+                                    if !count_flag {
+                                        if raw_flag {
+                                            // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                                            write_stdout(&handle, fullpath);
+                                        } else {
+                                            let highlighted_name =
+                                                highlight_capture(&name, &captures, false);
+                                            let highlighted_path = parent + "/" + &highlighted_name;
+                                            // TODO check if terminal accepts clickable paths
+                                            println!("file://{}", highlighted_path);
+                                        }
 
-                            if !count_flag {
-                                if raw_flag {
-                                    // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                    write_stdout(&handle, fullpath);
-                                } else {
-                                    let highlighted_name = highlight_capture(&name, &captures, false);
-                                    let highlighted_path = parent + "/" + &highlighted_name;
-                                    // TODO check if terminal accepts clickable paths
-                                    println!("file://{}", highlighted_path);
-                                }
+                                        if !matching_files_flag {
+                                            let mut linenumber = 0;
+                                            for line in content.lines() {
+                                                linenumber += 1;
+                                                let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                                let grep_captures: Vec<_> =
+                                                    grep_reg.find_iter(&line).collect();
 
-                                if !matching_files_flag {
-                                    let mut linenumber = 0;
-                                    for line in content.lines() {
-                                        linenumber += 1;
-                                        let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                        let grep_captures: Vec<_> = grep_reg.find_iter(&line).collect();
+                                                if !grep_captures.is_empty() {
+                                                    grep_patterns.fetch_add(
+                                                        grep_captures.len(),
+                                                        Ordering::Relaxed,
+                                                    );
 
-                                        if !grep_captures.is_empty() {
-                                            grep_patterns
-                                                .fetch_add(grep_captures.len(), Ordering::Relaxed);
+                                                    if raw_flag {
+                                                        let line =
+                                                            format!("  {}: {}", linenumber, &line);
+                                                        write_stdout(&handle, line);
+                                                    } else {
+                                                        let highlighted_line = highlight_capture(
+                                                            &line,
+                                                            &grep_captures,
+                                                            true,
+                                                        );
 
-                                            if raw_flag {
-                                                let line = format!("  {}: {}", linenumber, &line);
-                                                write_stdout(&handle, line);
-                                            } else {
-                                                let highlighted_line =
-                                                    highlight_capture(&line, &grep_captures, true);
-
-                                                println!(
-                                                    "  {}: {}",
-                                                    linenumber.to_string().truecolor(250, 0, 104),
-                                                    &highlighted_line
-                                                );
+                                                        println!(
+                                                            "  {}: {}",
+                                                            linenumber
+                                                                .to_string()
+                                                                .truecolor(250, 0, 104),
+                                                            &highlighted_line
+                                                        );
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                        }
-                    } else {
-                        if !count_flag {
-                            if raw_flag {
-                                // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                write_stdout(&handle, fullpath);
                             } else {
-                                let highlighted_name = highlight_capture(&name, &captures, false);
+                                if !count_flag {
+                                    if raw_flag {
+                                        // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
+                                        write_stdout(&handle, fullpath);
+                                    } else {
+                                        let highlighted_name =
+                                            highlight_capture(&name, &captures, false);
 
-                                let highlighted_path = parent + "/" + &highlighted_name;
-                                // TODO check if terminal accepts clickable paths
-                                println!("file://{}", highlighted_path);
+                                        let highlighted_path = parent + "/" + &highlighted_name;
+                                        // TODO check if terminal accepts clickable paths
+                                        println!("file://{}", highlighted_path);
+                                    }
+                                }
                             }
                         }
-                    }
-                }
+                    });
             });
-        });
 
         // empty bufwriter
         handle.lock().unwrap().flush().unwrap_or_else(|err| {
@@ -586,6 +577,11 @@ fn collect_entries(
     entries
 }
 
+// TODO how to determin the right chunk size?
+// TODO Ideas:
+// TODO     - based on L2/L3 cache size
+// TODO     - based number of files
+// TODO     - based average file size
 fn calculate_chunk_size(num_entries: usize) -> usize {
     // INFO     - Few files (<100)                           => 1 (no chunks, process individually)
     // INFO     - Moderate workload (100-10k files)          => 8-16 (balanced performance)
@@ -704,6 +700,29 @@ fn extension_filter(entry: &DirEntry, extensions: &Vec<String>) -> bool {
     }
 
     true
+}
+
+fn show_errors(err: &walkdir::Error) {
+    let path = err.path().unwrap_or(Path::new("")).display();
+    if let Some(inner) = err.io_error() {
+        match inner.kind() {
+            io::ErrorKind::InvalidData => {
+                warn!("Entry \'{}\' contains invalid data: {}", path, inner)
+            }
+            io::ErrorKind::NotFound => {
+                warn!("Entry \'{}\' not found: {}", path, inner);
+            }
+            io::ErrorKind::PermissionDenied => {
+                warn!("Missing permission to read entry \'{}\': {}", path, inner)
+            }
+            _ => {
+                error!(
+                    "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
+                    path, inner
+                )
+            }
+        }
+    }
 }
 
 // TODO add more examples
