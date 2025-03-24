@@ -265,29 +265,19 @@ fn main() {
             process::exit(1)
         });
 
-        let hits = format_hits(grep_reg, grep_files, grep_patterns, search_hits);
+        let hits = unpack_hits(grep_reg, grep_files, grep_patterns, search_hits);
 
         if count_flag && !stats_flag {
             println!("{}", hits);
         } else if stats_flag {
-            // check if hits contain one or two numbers and colourize accordingly
-            let hits: Vec<_> = hits.split_whitespace().collect();
-            let hits_formated = if hits.len() <= 1 {
-                format!("{}", hits[0].truecolor(59, 179, 140))
-            } else {
-                format!(
-                    "{} {}",
-                    hits[0].truecolor(59, 179, 140),
-                    hits[1].bright_yellow()
-                )
-            };
+            let colorized_hits = colorize_hits(hits);
 
             println!(
                 "[{}  {} {} {}]",
                 format!("{:?}", start.elapsed()).bright_blue(),
                 entry_count.load(Ordering::Relaxed).to_string().dimmed(),
                 error_count.load(Ordering::Relaxed).to_string().bright_red(),
-                hits_formated
+                colorized_hits
             );
         }
     } else if let Some(_) = matches.subcommand_matches("log") {
@@ -708,7 +698,7 @@ fn show_errors(err: &walkdir::Error) {
     }
 }
 
-fn format_hits(
+fn unpack_hits(
     grep_reg: Regex,
     grep_files: Arc<AtomicUsize>,
     grep_patterns: Arc<AtomicUsize>,
@@ -735,6 +725,22 @@ fn format_hits(
     };
 
     hits
+}
+
+fn colorize_hits(hits: String) -> String {
+    // check if hits contain one or two numbers and colourize accordingly
+    let hits: Vec<_> = hits.split_whitespace().collect();
+    let colorized_hits = if hits.len() <= 1 {
+        format!("{}", hits[0].truecolor(59, 179, 140))
+    } else {
+        format!(
+            "{} {}",
+            hits[0].truecolor(59, 179, 140),
+            hits[1].bright_yellow()
+        )
+    };
+
+    colorized_hits
 }
 
 // TODO add more examples
