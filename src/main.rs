@@ -141,7 +141,8 @@ fn main() {
 
         let entries = collect_entries(path, depth_flag, no_hidden_flag);
 
-        let chunk_size = calculate_chunk_size();
+        let chunk_size = calculate_chunk_size(entries.len());
+        dbg!(&chunk_size); // TODO remove
 
         // TODO use threadpool to control number of cpus
         // TODO new flag -> enter number of cpus
@@ -585,17 +586,20 @@ fn collect_entries(
     entries
 }
 
-fn calculate_chunk_size() -> usize {
-    // TODO dynamically adjust chunk_size
-    //     - Few files (<100)                        => 1 (no chunks, process individually)
-    //     - Moderate workload (100-10k files)       => 8-16 (balanced performance)
-    //     - Huge workload (10k+ files)	             => 4 × CPU cores (aggressive batching)
-    // OR
-    //     - If files are small and fast to process  => Larger chunks (8-64)
-    //     - If files are large and slow to process  => Smaller chunks (4-8)
-    //     - If CPU has many cores (16+ threads)     =>  Larger chunks (16-64)
-    //     - If CPU has few cores (4-8 threads)      => Smaller chunks (4-16)
-    current_num_threads()
+fn calculate_chunk_size(num_entries: usize) -> usize {
+    // INFO     - Few files (<100)                           => 1 (no chunks, process individually)
+    // INFO     - Moderate workload (100-10k files)          => 8-16 (balanced performance)
+    // INFO     - Huge workload (10k+ files)	             => 4 × CPU cores (aggressive batching)
+    // INFO OR  -----------------------------------------------------------------------------------
+    // INFO     - If files are small and fast to process     => Larger chunks (8-64)
+    // INFO     - If files are large and slow to process     => Smaller chunks (4-8)
+    // INFO     - If CPU has many cores (16+ threads)        =>  Larger chunks (16-64)
+    // INFO     - If CPU has few cores (4-8 threads)         => Smaller chunks (4-16)
+    match num_entries {
+        0..=1000 => 1 as usize,
+        1001..=100000 => current_num_threads() / 2, // TODO maybe use 8 here??
+        100001.. => current_num_threads(),
+    }
 }
 
 fn get_filename(entry: &DirEntry) -> String {
