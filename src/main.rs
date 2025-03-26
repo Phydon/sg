@@ -145,94 +145,76 @@ fn main() {
 
         // TODO use threadpool to control number of cpus
         // TODO new flag -> enter number of cpus
-        entries
-            // .into_par_iter()
-            .par_chunks(chunk_size)
-            .for_each(|chunk| {
-                chunk
-                    .into_par_iter() // TODO FIXME more scheduling overhead when using par iter here? (depending on chunk size?)
-                    .filter_map(|entry| match entry {
-                        Ok(entry) => Some(entry),
-                        Err(err) => {
-                            error_count.fetch_add(1, Ordering::Relaxed);
+        entries.par_chunks(chunk_size).for_each(|chunk| {
+            chunk
+                .into_par_iter() // TODO more scheduling overhead when using par iter here? (depending on chunk size?)
+                .filter_map(|entry| match entry {
+                    Ok(entry) => Some(entry),
+                    Err(err) => {
+                        error_count.fetch_add(1, Ordering::Relaxed);
 
-                            if show_errors_flag {
-                                show_errors(err);
-                            }
-
-                            None
+                        if show_errors_flag {
+                            show_errors(err);
                         }
-                    })
-                    .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
-                    .filter(|entry| extension_filter(entry, &extensions))
-                    .filter(|entry| {
-                        let name = get_filename(&entry);
-                        !excludes.is_match(&name)
-                    })
-                    .for_each(|entry| {
-                        // all pre-filters (set via flags) are checked -> start counting entries
-                        entry_count.fetch_add(1, Ordering::Relaxed);
 
-                        let mut quirkle = Quirkle::new(entry);
+                        None
+                    }
+                })
+                .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
+                .filter(|entry| extension_filter(entry, &extensions))
+                .filter(|entry| {
+                    let name = get_filename(&entry);
+                    !excludes.is_match(&name)
+                })
+                .for_each(|entry| {
+                    // all pre-filters (set via flags) are checked -> start counting entries
+                    entry_count.fetch_add(1, Ordering::Relaxed);
 
-                        // search for a pattern match (regex) in the remaining entries
-                        let name = quirkle.name();
-                        let captures: Vec<_> = reg.find_iter(&name).collect();
-                        if !captures.is_empty() {
-                            search_hits.fetch_add(1, Ordering::Relaxed);
+                    let mut quirkle = Quirkle::new(entry);
 
-                            // if grep_flag is set -> search for pattern matches (regex) in files
-                            if !grep_reg.as_str().is_empty() {
-                                // TODO show an error here when content unreadable??
-                                let content = fs::read_to_string(&quirkle.path)
-                                    .unwrap_or_else(|_| String::new());
+                    // search for a pattern match (regex) in the remaining entries
+                    let name = quirkle.name();
+                    let captures: Vec<_> = reg.find_iter(&name).collect();
+                    if !captures.is_empty() {
+                        search_hits.fetch_add(1, Ordering::Relaxed);
 
-                                if grep_reg.is_match(&content) {
-                                    grep_files.fetch_add(1, Ordering::Relaxed);
+                        // if grep_flag is set -> search for pattern matches (regex) in files
+                        if !grep_reg.as_str().is_empty() {
+                            // TODO show an error here when content unreadable??
+                            let content =
+                                fs::read_to_string(&quirkle.path).unwrap_or_else(|_| String::new());
 
-                                    if !matching_files_flag {
-                                        let mut linenumber = 0;
-                                        for line in content.lines() {
-                                            linenumber += 1;
-                                            let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                            let grep_captures: Vec<_> =
-                                                grep_reg.find_iter(&line).collect();
+                            if grep_reg.is_match(&content) {
+                                grep_files.fetch_add(1, Ordering::Relaxed);
 
-                                            if !grep_captures.is_empty() {
-                                                grep_patterns.fetch_add(
-                                                    grep_captures.len(),
-                                                    Ordering::Relaxed,
-                                                );
+                                if !matching_files_flag {
+                                    let mut linenumber = 0;
+                                    for line in content.lines() {
+                                        linenumber += 1;
+                                        let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                        let grep_captures: Vec<_> =
+                                            grep_reg.find_iter(&line).collect();
 
-                                                if raw_flag {
-                                                    let qline =
-                                                        QLine::new(linenumber, line.to_string());
-                                                    quirkle.add_line(qline);
-                                                } else {
-                                                    let highlighted_line = highlight_capture(
-                                                        &line,
-                                                        &grep_captures,
-                                                        true,
-                                                    );
+                                        if !grep_captures.is_empty() {
+                                            grep_patterns
+                                                .fetch_add(grep_captures.len(), Ordering::Relaxed);
 
-                                                    let qline =
-                                                        QLine::new(linenumber, highlighted_line);
-                                                    quirkle.add_line(qline);
-                                                }
+                                            if raw_flag {
+                                                let qline =
+                                                    QLine::new(linenumber, line.to_string());
+                                                quirkle.add_line(qline);
+                                            } else {
+                                                let highlighted_line =
+                                                    highlight_capture(&line, &grep_captures, true);
+
+                                                let qline =
+                                                    QLine::new(linenumber, highlighted_line);
+                                                quirkle.add_line(qline);
                                             }
                                         }
                                     }
-
-                                    if !count_flag {
-                                        if raw_flag {
-                                            quirkle.raw_out(&handle, matching_files_flag);
-                                        } else {
-                                            // FIXME -> see function definition
-                                            quirkle.colored_out(&captures, matching_files_flag);
-                                        }
-                                    }
                                 }
-                            } else {
+
                                 if !count_flag {
                                     if raw_flag {
                                         quirkle.raw_out(&handle, matching_files_flag);
@@ -242,9 +224,19 @@ fn main() {
                                     }
                                 }
                             }
+                        } else {
+                            if !count_flag {
+                                if raw_flag {
+                                    quirkle.raw_out(&handle, matching_files_flag);
+                                } else {
+                                    // FIXME -> see function definition
+                                    quirkle.colored_out(&captures, matching_files_flag);
+                                }
+                            }
                         }
-                    });
-            });
+                    }
+                });
+        });
 
         // empty bufwriter
         handle.lock().unwrap().flush().unwrap_or_else(|err| {
