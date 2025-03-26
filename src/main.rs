@@ -150,7 +150,7 @@ fn main() {
             .par_chunks(chunk_size)
             .for_each(|chunk| {
                 chunk
-                    .into_par_iter() // TODO FIXME more scheduling overhead when using par iter here?
+                    .into_par_iter() // TODO FIXME more scheduling overhead when using par iter here? (depending on chunk size?)
                     .filter_map(|entry| match entry {
                         Ok(entry) => Some(entry),
                         Err(err) => {
@@ -173,11 +173,10 @@ fn main() {
                         // all pre-filters (set via flags) are checked -> start counting entries
                         entry_count.fetch_add(1, Ordering::Relaxed);
 
-                        let name = get_filename(&entry);
-                        let parent = get_parent_path(entry.clone());
-                        let fullpath = format!("{}/{}", parent, name);
+                        let mut quirkle = Quirkle::new(entry);
 
                         // search for a pattern match (regex) in the remaining entries
+                        let name = quirkle.name();
                         let captures: Vec<_> = reg.find_iter(&name).collect();
                         if !captures.is_empty() {
                             search_hits.fetch_add(1, Ordering::Relaxed);
@@ -185,73 +184,61 @@ fn main() {
                             // if grep_flag is set -> search for pattern matches (regex) in files
                             if !grep_reg.as_str().is_empty() {
                                 // TODO show an error here when content unreadable??
-                                let content =
-                                    fs::read_to_string(&fullpath).unwrap_or_else(|_| String::new());
+                                let content = fs::read_to_string(&quirkle.path)
+                                    .unwrap_or_else(|_| String::new());
+
                                 if grep_reg.is_match(&content) {
                                     grep_files.fetch_add(1, Ordering::Relaxed);
 
-                                    if !count_flag {
-                                        if raw_flag {
-                                            // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                            write_stdout(&handle, fullpath);
-                                        } else {
-                                            let highlighted_name =
-                                                highlight_capture(&name, &captures, false);
-                                            let highlighted_path = parent + "/" + &highlighted_name;
-                                            // TODO check if terminal accepts clickable paths
-                                            println!("file://{}", highlighted_path);
-                                        }
+                                    if !matching_files_flag {
+                                        let mut linenumber = 0;
+                                        for line in content.lines() {
+                                            linenumber += 1;
+                                            let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                            let grep_captures: Vec<_> =
+                                                grep_reg.find_iter(&line).collect();
 
-                                        if !matching_files_flag {
-                                            let mut linenumber = 0;
-                                            for line in content.lines() {
-                                                linenumber += 1;
-                                                let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                                let grep_captures: Vec<_> =
-                                                    grep_reg.find_iter(&line).collect();
+                                            if !grep_captures.is_empty() {
+                                                grep_patterns.fetch_add(
+                                                    grep_captures.len(),
+                                                    Ordering::Relaxed,
+                                                );
 
-                                                if !grep_captures.is_empty() {
-                                                    grep_patterns.fetch_add(
-                                                        grep_captures.len(),
-                                                        Ordering::Relaxed,
+                                                if raw_flag {
+                                                    let qline =
+                                                        QLine::new(linenumber, line.to_string());
+                                                    quirkle.add_line(qline);
+                                                } else {
+                                                    let highlighted_line = highlight_capture(
+                                                        &line,
+                                                        &grep_captures,
+                                                        true,
                                                     );
 
-                                                    if raw_flag {
-                                                        let line =
-                                                            format!("  {}: {}", linenumber, &line);
-                                                        write_stdout(&handle, line);
-                                                    } else {
-                                                        let highlighted_line = highlight_capture(
-                                                            &line,
-                                                            &grep_captures,
-                                                            true,
-                                                        );
-
-                                                        println!(
-                                                            "  {}: {}",
-                                                            linenumber
-                                                                .to_string()
-                                                                .truecolor(250, 0, 104),
-                                                            &highlighted_line
-                                                        );
-                                                    }
+                                                    let qline =
+                                                        QLine::new(linenumber, highlighted_line);
+                                                    quirkle.add_line(qline);
                                                 }
                                             }
+                                        }
+                                    }
+
+                                    if !count_flag {
+                                        if raw_flag {
+                                            quirkle.raw_out(&handle, matching_files_flag);
+                                        } else {
+                                            // FIXME -> see function definition
+                                            quirkle.colored_out(&captures, matching_files_flag);
                                         }
                                     }
                                 }
                             } else {
                                 if !count_flag {
                                     if raw_flag {
-                                        // don't use "file://" to make the path clickable in Windows Terminal -> otherwise output can't be piped easily to another program
-                                        write_stdout(&handle, fullpath);
+                                        quirkle.raw_out(&handle, matching_files_flag);
                                     } else {
-                                        let highlighted_name =
-                                            highlight_capture(&name, &captures, false);
-
-                                        let highlighted_path = parent + "/" + &highlighted_name;
-                                        // TODO check if terminal accepts clickable paths
-                                        println!("file://{}", highlighted_path);
+                                        // FIXME -> see function definition
+                                        quirkle.colored_out(&captures, matching_files_flag);
                                     }
                                 }
                             }
@@ -296,6 +283,100 @@ fn main() {
         unreachable!();
         // sg().print_help();
         // process::exit(0)
+    }
+}
+
+struct Quirkle {
+    // I needed a name, don`t sue me
+    // reference: https://en.wikipedia.org/wiki/Qwirkle
+    name: String,
+    parent: String,
+    path: String,
+    lines: Option<Vec<QLine>>,
+}
+
+#[derive(Clone)]
+struct QLine {
+    linenumber: u32,
+    oneliner: String,
+}
+
+impl QLine {
+    fn new(linenumber: u32, oneliner: String) -> Self {
+        Self {
+            linenumber,
+            oneliner,
+        }
+    }
+
+    fn show_raw(self) -> String {
+        format!("  {}: {}", self.linenumber, self.oneliner)
+    }
+}
+
+impl Quirkle {
+    fn new(entry: &DirEntry) -> Self {
+        let name = get_filename(&entry);
+        let parent = get_parent_path(entry.clone());
+        let path = format!("{}/{}", parent, name);
+        let lines = None;
+
+        Self {
+            name,
+            parent,
+            path,
+            lines,
+        }
+    }
+
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn add_line(&mut self, qline: QLine) {
+        match &mut self.lines {
+            Some(lines) => lines.push(qline),
+            None => self.lines = Some(vec![qline]),
+        }
+    }
+
+    fn raw_out(self, handle: &Arc<Mutex<BufWriter<Stdout>>>, matching_files_flag: bool) {
+        write_stdout(handle, self.path);
+
+        if let Some(lines) = self.lines {
+            if !matching_files_flag {
+                // parallel processing can mix up the line ordering
+                lines.par_iter().for_each(|line| {
+                    // TODO performance drop because  of cloning
+                    let line = line.clone().show_raw();
+                    write_stdout(&handle, line);
+                });
+            }
+        }
+    }
+
+    // FIXME filenames and matching lines get mixed up due to slow processing speed of println! function and parallel processing of files
+    // FIXME     a BufWriter (no colored output) fills the buffer first before printing out
+    // FIXME     println!, for example, puts something in the terminal,
+    // FIXME        another process prints something in the terminal, and just than the matching lines are following
+    fn colored_out(self, captures: &Vec<Match>, matching_files_flag: bool) {
+        let highlighted_name = highlight_capture(&self.name, captures, false);
+        let highlighted_path = self.parent + "/" + &highlighted_name;
+        // TODO check if terminal accepts clickable paths
+        println!("file://{}", highlighted_path);
+
+        if let Some(lines) = self.lines {
+            if !matching_files_flag {
+                // parallel processing can mix up the line ordering
+                lines.par_iter().for_each(|line| {
+                    println!(
+                        "  {}: {}",
+                        line.linenumber.to_string().truecolor(250, 0, 104),
+                        line.oneliner
+                    );
+                });
+            }
+        }
     }
 }
 
@@ -586,6 +667,8 @@ fn get_parent_path(entry: DirEntry) -> String {
 }
 
 fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: String) {
+    // don't use "file://" to make the path clickable in Windows Terminal
+    // -> otherwise output can't be piped easily to another program
     let mut handle_lock = handle.lock().unwrap();
     writeln!(handle_lock, "{}", content).unwrap_or_else(|err| {
         error!("Error writing to stdout: {err}");
