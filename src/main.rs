@@ -244,7 +244,13 @@ fn main() {
             process::exit(1)
         });
 
-        let hits = unpack_hits(grep_reg, grep_files, grep_patterns, search_hits);
+        let hits = unpack_hits(
+            grep_reg,
+            grep_files,
+            grep_patterns,
+            matching_files_flag,
+            search_hits,
+        );
 
         if count_flag && !stats_flag {
             println!("{}", hits);
@@ -777,24 +783,25 @@ fn unpack_hits(
     grep_reg: Regex,
     grep_files: Arc<AtomicUsize>,
     grep_patterns: Arc<AtomicUsize>,
+    matching_files_flag: bool,
     search_hits: Arc<AtomicUsize>,
 ) -> String {
     // format found search hits based on whether grep flag was set or not
-    // if grep flag was set, it shows two numbers:
-    //     - for found files containing matches
-    //     - for number of found matches overall
+    // if grep flag was set, it shows:
+    //     - for found files containing matches inside the file
+    //         (shows only this number when matching_files_flag was set)
+    //     - for number of found matches (inside of files) overall
     // if the grep flag was not set it shows one number: the number of found files containing a match inside the filename
-    // TODO how to handle -m flag here?
-    // TODO     -> still show '0' grep_hits
-    //             (currently the case, because we don`t search in files if at least one match identified)
-    //                 -> good enough for -m flag to identify a file containing at least one match
-    // TODO     -> or remove the '0' as well and only show number of search_hits
     let hits = if !grep_reg.as_str().is_empty() {
-        format!(
-            "{} {}",
-            grep_files.load(Ordering::Relaxed).to_string(),
-            grep_patterns.load(Ordering::Relaxed).to_string(),
-        )
+        if matching_files_flag {
+            grep_files.load(Ordering::Relaxed).to_string()
+        } else {
+            format!(
+                "{} {}",
+                grep_files.load(Ordering::Relaxed).to_string(),
+                grep_patterns.load(Ordering::Relaxed).to_string(),
+            )
+        }
     } else {
         search_hits.load(Ordering::Relaxed).to_string()
     };
