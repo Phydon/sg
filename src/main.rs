@@ -147,13 +147,6 @@ fn main() {
         // TODO new flag -> enter number of cpus
         entries.par_chunks(chunk_size).for_each(|chunk| {
             chunk
-                // TODO possbile error here when printing to stdout?
-                // TODO when buffer is filled, can filepaths and matching lines get mixed up?
-                // TODO  -> e.g.:
-                // TODO     - old buffer is filled -> gets flushed to stdout, still some matching lines need to printed out
-                // TODO     - another filename gets on top of the new buffer, due to parallel processing
-                // TODO     - the rest of the matching lines from the old file get added below the new filename
-                // TODO  -> check if this is the case
                 .into_par_iter() // TODO more scheduling overhead when using par iter here? (depending on chunk size?)
                 .filter_map(|entry| match entry {
                     Ok(entry) => Some(entry),
@@ -319,6 +312,14 @@ impl QLine {
     fn show_raw(self) -> String {
         format!("  {}: {}", self.linenumber, self.oneliner)
     }
+
+    fn show_colored(self) -> String {
+        format!(
+            "  {}: {}",
+            self.linenumber.to_string().truecolor(250, 0, 104),
+            self.oneliner
+        )
+    }
 }
 
 impl Quirkle {
@@ -347,49 +348,62 @@ impl Quirkle {
         }
     }
 
+    // TODO merge with colored_out()
     fn raw_out(self, handle: &Arc<Mutex<BufWriter<Stdout>>>, matching_files_flag: bool) {
         // don't use "file://" to make the path clickable in Windows Terminal
         // -> otherwise output can't be piped and used by another program
-        write_stdout(handle, self.path);
+        let mut raw_matches: Vec<String> = Vec::new();
+        raw_matches.push(self.path);
 
         if let Some(lines) = self.lines {
             if !matching_files_flag {
-                // parallel processing can mix up the line ordering
-                lines.par_iter().for_each(|line| {
-                    // TODO performance drop because of cloning
-                    let line = line.clone().show_raw();
-                    write_stdout(&handle, line);
-                });
+                let mut raw_lines: Vec<String> = lines
+                    .par_iter()
+                    .map(|line| {
+                        // INFO order of elements will not change when using map()
+                        // TODO performance drop because of cloning
+                        let line = line.clone().show_raw();
+                        line
+                    })
+                    .collect();
+
+                raw_matches.append(&mut raw_lines);
             }
         }
+        write_stdout(handle, raw_matches);
     }
 
+    // TODO merge with raw_out()
     fn colored_out(
         self,
         handle: &Arc<Mutex<BufWriter<Stdout>>>,
         captures: &Vec<Match>,
         matching_files_flag: bool,
     ) {
+        let mut colored_matches: Vec<String> = Vec::new();
+
         let colored_name = highlight_capture(&self.name, captures, false);
         // make file clickalbe on windows by adding 'file://'
         // TODO check if terminal accepts clickable paths
         let colored_path = format!("file://{}/{}", self.parent, &colored_name);
-
-        write_stdout(handle, colored_path);
+        colored_matches.push(colored_path);
 
         if let Some(lines) = self.lines {
             if !matching_files_flag {
-                // parallel processing can mix up the line ordering
-                lines.par_iter().for_each(|line| {
-                    let colored_line = format!(
-                        "  {}: {}",
-                        line.linenumber.to_string().truecolor(250, 0, 104),
-                        line.oneliner
-                    );
-                    write_stdout(handle, colored_line);
-                });
+                let mut colored_lines: Vec<String> = lines
+                    .par_iter()
+                    .map(|line| {
+                        // INFO order of elements will not change when using map()
+                        // TODO performance drop because of cloning
+                        let line = line.clone().show_colored();
+                        line
+                    })
+                    .collect();
+
+                colored_matches.append(&mut colored_lines);
             }
         }
+        write_stdout(handle, colored_matches);
     }
 }
 
@@ -679,7 +693,7 @@ fn get_parent_path(entry: DirEntry) -> String {
         .replace("\\", "/")
 }
 
-fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: String) {
+fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: Vec<String>) {
     let mut handle_lock = handle.lock().unwrap();
 
     // // TODO explain why this check is needed
@@ -697,7 +711,9 @@ fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: String) {
     //     });
     // }
 
-    writeln!(handle_lock, "{}", content).unwrap_or_else(|err| {
+    let joined_content = content.join("\n");
+
+    writeln!(handle_lock, "{}", joined_content).unwrap_or_else(|err| {
         error!("Error writing to stdout: {err}");
         process::exit(1);
     });
