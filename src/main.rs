@@ -369,6 +369,7 @@ impl Quirkle {
                 matches.append(&mut lines);
             }
         }
+
         write_stdout(handle, matches);
     }
 }
@@ -661,21 +662,6 @@ fn get_parent_path(entry: DirEntry) -> String {
 
 fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: Vec<String>) {
     let mut handle_lock = handle.lock().unwrap();
-
-    // // TODO explain why this check is needed
-    // let capacity = handle_lock.capacity();
-    // let remaining_capacity = capacity - handle_lock.buffer().len();
-
-    // // safety threshold is 25% of buffer capacity
-    // // TODO is that enough? (potential problem with large files) -> check
-    // let buffer_safety_threshold = capacity as f64 * 0.75;
-
-    // if remaining_capacity >= buffer_safety_threshold as usize {
-    //     handle_lock.flush().unwrap_or_else(|err| {
-    //         error!("Error flushing writer: {err}");
-    //         process::exit(1)
-    //     });
-    // }
 
     let joined_content = content.join("\n");
 
