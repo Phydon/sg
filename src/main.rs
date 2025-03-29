@@ -309,16 +309,16 @@ impl QLine {
         }
     }
 
-    fn show_raw(self) -> String {
-        format!("  {}: {}", self.linenumber, self.oneliner)
-    }
-
-    fn show_colored(self) -> String {
-        format!(
-            "  {}: {}",
-            self.linenumber.to_string().truecolor(250, 0, 104),
-            self.oneliner
-        )
+    fn merge_colored(self, colored: bool) -> String {
+        if colored {
+            format!(
+                "  {}: {}",
+                self.linenumber.to_string().truecolor(250, 0, 104),
+                self.oneliner
+            )
+        } else {
+            format!("  {}: {}", self.linenumber, self.oneliner)
+        }
     }
 }
 
@@ -362,7 +362,7 @@ impl Quirkle {
                     .map(|line| {
                         // INFO order of elements will not change when using map()
                         // TODO performance drop because of cloning
-                        let line = line.clone().show_raw();
+                        let line = line.clone().merge_colored(false);
                         line
                     })
                     .collect();
@@ -395,7 +395,7 @@ impl Quirkle {
                     .map(|line| {
                         // INFO order of elements will not change when using map()
                         // TODO performance drop because of cloning
-                        let line = line.clone().show_colored();
+                        let line = line.clone().merge_colored(true);
                         line
                     })
                     .collect();
