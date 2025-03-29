@@ -216,24 +216,12 @@ fn main() {
                                 }
 
                                 if !count_flag {
-                                    if raw_flag {
-                                        quirkle.raw_out(&handle, matching_files_flag);
-                                    } else {
-                                        quirkle.colored_out(
-                                            &handle,
-                                            &captures,
-                                            matching_files_flag,
-                                        );
-                                    }
+                                    quirkle.show(&handle, &captures, matching_files_flag, raw_flag);
                                 }
                             }
                         } else {
                             if !count_flag {
-                                if raw_flag {
-                                    quirkle.raw_out(&handle, matching_files_flag);
-                                } else {
-                                    quirkle.colored_out(&handle, &captures, matching_files_flag);
-                                }
+                                quirkle.show(&handle, &captures, matching_files_flag, raw_flag);
                             }
                         }
                     }
@@ -309,15 +297,15 @@ impl QLine {
         }
     }
 
-    fn merge_colored(self, colored: bool) -> String {
-        if colored {
+    fn merge(self, raw_flag: bool) -> String {
+        if raw_flag {
+            format!("  {}: {}", self.linenumber, self.oneliner)
+        } else {
             format!(
                 "  {}: {}",
                 self.linenumber.to_string().truecolor(250, 0, 104),
                 self.oneliner
             )
-        } else {
-            format!("  {}: {}", self.linenumber, self.oneliner)
         }
     }
 }
@@ -348,62 +336,40 @@ impl Quirkle {
         }
     }
 
-    // TODO merge with colored_out()
-    fn raw_out(self, handle: &Arc<Mutex<BufWriter<Stdout>>>, matching_files_flag: bool) {
-        // don't use "file://" to make the path clickable in Windows Terminal
-        // -> otherwise output can't be piped and used by another program
-        let mut raw_matches: Vec<String> = Vec::new();
-        raw_matches.push(self.path);
-
-        if let Some(lines) = self.lines {
-            if !matching_files_flag {
-                let mut raw_lines: Vec<String> = lines
-                    .par_iter()
-                    .map(|line| {
-                        // INFO order of elements will not change when using map()
-                        // TODO performance drop because of cloning
-                        let line = line.clone().merge_colored(false);
-                        line
-                    })
-                    .collect();
-
-                raw_matches.append(&mut raw_lines);
-            }
-        }
-        write_stdout(handle, raw_matches);
-    }
-
-    // TODO merge with raw_out()
-    fn colored_out(
+    fn show(
         self,
         handle: &Arc<Mutex<BufWriter<Stdout>>>,
         captures: &Vec<Match>,
         matching_files_flag: bool,
+        raw_flag: bool,
     ) {
-        let mut colored_matches: Vec<String> = Vec::new();
+        let mut matches: Vec<String> = Vec::new();
 
-        let colored_name = highlight_capture(&self.name, captures, false);
-        // make file clickalbe on windows by adding 'file://'
-        // TODO check if terminal accepts clickable paths
-        let colored_path = format!("file://{}/{}", self.parent, &colored_name);
-        colored_matches.push(colored_path);
+        if raw_flag {
+            matches.push(self.path);
+        } else {
+            let name = highlight_capture(&self.name, captures, false);
+            // make file clickalbe on windows by adding 'file://'
+            // TODO check if terminal accepts clickable paths
+            let path = format!("file://{}/{}", self.parent, &name);
+            matches.push(path);
+        }
 
         if let Some(lines) = self.lines {
             if !matching_files_flag {
-                let mut colored_lines: Vec<String> = lines
+                let mut lines: Vec<String> = lines
                     .par_iter()
                     .map(|line| {
                         // INFO order of elements will not change when using map()
                         // TODO performance drop because of cloning
-                        let line = line.clone().merge_colored(true);
-                        line
+                        line.clone().merge(raw_flag)
                     })
                     .collect();
 
-                colored_matches.append(&mut colored_lines);
+                matches.append(&mut lines);
             }
         }
-        write_stdout(handle, colored_matches);
+        write_stdout(handle, matches);
     }
 }
 
