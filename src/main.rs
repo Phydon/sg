@@ -147,6 +147,13 @@ fn main() {
         // TODO new flag -> enter number of cpus
         entries.par_chunks(chunk_size).for_each(|chunk| {
             chunk
+                // TODO possbile error here when printing to stdout?
+                // TODO when buffer is filled, can filepaths and matching lines get mixed up?
+                // TODO  -> e.g.:
+                // TODO     - old buffer is filled -> gets flushed to stdout, still some matching lines need to printed out
+                // TODO     - another filename gets on top of the new buffer, due to parallel processing
+                // TODO     - the rest of the matching lines from the old file get added below the new filename
+                // TODO  -> check if this is the case
                 .into_par_iter() // TODO more scheduling overhead when using par iter here? (depending on chunk size?)
                 .filter_map(|entry| match entry {
                     Ok(entry) => Some(entry),
@@ -219,8 +226,11 @@ fn main() {
                                     if raw_flag {
                                         quirkle.raw_out(&handle, matching_files_flag);
                                     } else {
-                                        // FIXME -> see function definition
-                                        quirkle.colored_out(&captures, matching_files_flag);
+                                        quirkle.colored_out(
+                                            &handle,
+                                            &captures,
+                                            matching_files_flag,
+                                        );
                                     }
                                 }
                             }
@@ -229,8 +239,7 @@ fn main() {
                                 if raw_flag {
                                     quirkle.raw_out(&handle, matching_files_flag);
                                 } else {
-                                    // FIXME -> see function definition
-                                    quirkle.colored_out(&captures, matching_files_flag);
+                                    quirkle.colored_out(&handle, &captures, matching_files_flag);
                                 }
                             }
                         }
@@ -339,13 +348,15 @@ impl Quirkle {
     }
 
     fn raw_out(self, handle: &Arc<Mutex<BufWriter<Stdout>>>, matching_files_flag: bool) {
+        // don't use "file://" to make the path clickable in Windows Terminal
+        // -> otherwise output can't be piped and used by another program
         write_stdout(handle, self.path);
 
         if let Some(lines) = self.lines {
             if !matching_files_flag {
                 // parallel processing can mix up the line ordering
                 lines.par_iter().for_each(|line| {
-                    // TODO performance drop because  of cloning
+                    // TODO performance drop because of cloning
                     let line = line.clone().show_raw();
                     write_stdout(&handle, line);
                 });
@@ -353,25 +364,29 @@ impl Quirkle {
         }
     }
 
-    // FIXME filenames and matching lines get mixed up due to slow processing speed of println! function and parallel processing of files
-    // FIXME     a BufWriter (no colored output) fills the buffer first before printing out
-    // FIXME     println!, for example, puts something in the terminal,
-    // FIXME        another process prints something in the terminal, and just than the matching lines are following
-    fn colored_out(self, captures: &Vec<Match>, matching_files_flag: bool) {
-        let highlighted_name = highlight_capture(&self.name, captures, false);
-        let highlighted_path = self.parent + "/" + &highlighted_name;
+    fn colored_out(
+        self,
+        handle: &Arc<Mutex<BufWriter<Stdout>>>,
+        captures: &Vec<Match>,
+        matching_files_flag: bool,
+    ) {
+        let colored_name = highlight_capture(&self.name, captures, false);
+        // make file clickalbe on windows by adding 'file://'
         // TODO check if terminal accepts clickable paths
-        println!("file://{}", highlighted_path);
+        let colored_path = format!("file://{}/{}", self.parent, &colored_name);
+
+        write_stdout(handle, colored_path);
 
         if let Some(lines) = self.lines {
             if !matching_files_flag {
                 // parallel processing can mix up the line ordering
                 lines.par_iter().for_each(|line| {
-                    println!(
+                    let colored_line = format!(
                         "  {}: {}",
                         line.linenumber.to_string().truecolor(250, 0, 104),
                         line.oneliner
                     );
+                    write_stdout(handle, colored_line);
                 });
             }
         }
@@ -665,9 +680,23 @@ fn get_parent_path(entry: DirEntry) -> String {
 }
 
 fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: String) {
-    // don't use "file://" to make the path clickable in Windows Terminal
-    // -> otherwise output can't be piped easily to another program
     let mut handle_lock = handle.lock().unwrap();
+
+    // // TODO explain why this check is needed
+    // let capacity = handle_lock.capacity();
+    // let remaining_capacity = capacity - handle_lock.buffer().len();
+
+    // // safety threshold is 25% of buffer capacity
+    // // TODO is that enough? (potential problem with large files) -> check
+    // let buffer_safety_threshold = capacity as f64 * 0.75;
+
+    // if remaining_capacity >= buffer_safety_threshold as usize {
+    //     handle_lock.flush().unwrap_or_else(|err| {
+    //         error!("Error flushing writer: {err}");
+    //         process::exit(1)
+    //     });
+    // }
+
     writeln!(handle_lock, "{}", content).unwrap_or_else(|err| {
         error!("Error writing to stdout: {err}");
         process::exit(1);
