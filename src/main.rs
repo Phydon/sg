@@ -527,10 +527,9 @@ fn sg() -> Command {
                 .long("raw")
                 .help("Don`t colourize the search output and speed up the output printing")
                 .long_help(format!(
-                    "{}\n{}\n{}\n{}",
+                    "{}\n{}\n{}",
                     "Focus on performance",
                     "Don`t colourize the search output",
-                    "Write the output via BufWriter",
                     "Print raw filepaths",
                 ))
                 .action(ArgAction::SetTrue)
