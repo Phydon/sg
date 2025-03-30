@@ -66,8 +66,6 @@ fn main() {
         .get_many::<String>("args")
         .map(|a| a.collect::<Vec<_>>())
     {
-        // TODO can this get triggered?
-        // TODO should be handle with Arg::new("args").num_args(2) -> check
         // don't accept emtpy strings like "" (or in powershell `"`")
         if args[0].is_empty() {
             let err = sg().error(
