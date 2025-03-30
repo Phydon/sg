@@ -1,4 +1,3 @@
-// TODO refactor
 // TODO read path from stdin?? (echo "C:/Directory/" | sg "todo|fixme" -i)
 use std::{
     env,
@@ -95,14 +94,12 @@ fn main() {
         let extensions: Vec<String> = matches
             .get_many::<String>("extensions")
             .map(|a| a.cloned().collect::<Vec<_>>())
-            // TODO what is the default value here?
             .unwrap_or_default();
 
         // get exclude patterns
         let exclude_patterns: Vec<String> = matches
             .get_many::<String>("exclude")
             .map(|a| a.cloned().collect::<Vec<_>>())
-            // TODO what is the default value here?
             .unwrap_or_default();
 
         // store exclude patterns in regex set
@@ -130,8 +127,6 @@ fn main() {
 
         // TODO dynamically set buffer size here, based on number of files?? (check grep_flag??))
 
-        // TODO use threadpool to control number of cpus
-        // TODO new flag -> enter number of cpus
         entries
             .into_par_iter()
             .filter_map(|entry| match entry {
@@ -571,8 +566,8 @@ fn set_search_depth(matches: &ArgMatches) -> u32 {
 fn build_regex(patterns: &str, case_insensitive_flag: bool) -> Regex {
     let reg = RegexBuilder::new(patterns)
         .case_insensitive(case_insensitive_flag)
-        // TODO check if needed
-        // .unicode(false)
+        // TODO new flag -> include unicode (e.g. greek letters, etc.) in search -> otherwise only ASCII is allowed
+        .unicode(false)
         .build()
         .unwrap_or_else(|err| {
             error!("Unable to get regex pattern: {err}");
@@ -587,7 +582,7 @@ fn collect_entries(
     depth_flag: u32,
     no_hidden_flag: bool,
 ) -> Vec<Result<DirEntry, walkdir::Error>> {
-    // TODO massive memory usage here -> optimize
+    // TODO potential massive memory usage here -> optimize
     let entries: Vec<_> = WalkDir::new(path)
         .max_depth(depth_flag as usize) // set maximum search depth
         .into_iter()
