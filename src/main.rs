@@ -247,13 +247,7 @@ fn main() {
             );
         }
     } else if let Some(_) = matches.subcommand_matches("log") {
-        if let Ok(logs) = show_log_file(&config_dir) {
-            println!("{}", "Available logs:".bold().yellow());
-            println!("{}", logs);
-        } else {
-            error!("Unable to read logs");
-            process::exit(1);
-        }
+        show_logs(&config_dir);
     } else if let Some(_) = matches.subcommand_matches("examples") {
         examples();
     } else if let Some(_) = matches.subcommand_matches("syntax") {
@@ -1060,5 +1054,15 @@ fn show_log_file(config_dir: &PathBuf) -> io::Result<String> {
                 log_path.display()
             ))
         }
+    }
+}
+
+fn show_logs(config_dir: &PathBuf) {
+    if let Ok(logs) = show_log_file(&config_dir) {
+        println!("{}", "Available logs:".bold().yellow());
+        println!("{}", logs);
+    } else {
+        error!("Unable to read logs");
+        process::exit(1);
     }
 }
