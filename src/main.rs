@@ -19,7 +19,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, warn};
-use rayon::{current_num_threads, prelude::*};
+use rayon::prelude::*;
 use regex::{Match, Regex, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
 
@@ -132,92 +132,85 @@ fn main() {
 
         // TODO dynamically set buffer size here, based on number of files?? (check grep_flag??))
 
-        let chunk_size = calculate_chunk_size(entries.len());
-
         // TODO use threadpool to control number of cpus
         // TODO new flag -> enter number of cpus
-        entries.par_chunks(chunk_size).for_each(|chunk| {
-            chunk
-                .into_par_iter() // TODO more scheduling overhead when using par iter here? (depending on chunk size?)
-                .filter_map(|entry| match entry {
-                    Ok(entry) => Some(entry),
-                    Err(err) => {
-                        error_count.fetch_add(1, Ordering::Relaxed);
+        entries
+            .into_par_iter()
+            .filter_map(|entry| match entry {
+                Ok(entry) => Some(entry),
+                Err(err) => {
+                    error_count.fetch_add(1, Ordering::Relaxed);
 
-                        if show_errors_flag {
-                            show_errors(err);
-                        }
-
-                        None
+                    if show_errors_flag {
+                        show_errors(&err);
                     }
-                })
-                .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
-                .filter(|entry| extension_filter(entry, &extensions))
-                .filter(|entry| {
-                    let name = get_filename(&entry);
-                    !excludes.is_match(&name)
-                })
-                .for_each(|entry| {
-                    // all pre-filters (set via flags) are checked -> start counting entries
-                    entry_count.fetch_add(1, Ordering::Relaxed);
 
-                    let mut quirkle = Quirkle::new(entry);
+                    None
+                }
+            })
+            .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
+            .filter(|entry| extension_filter(entry, &extensions))
+            .filter(|entry| {
+                let name = get_filename(&entry);
+                !excludes.is_match(&name)
+            })
+            .for_each(|entry| {
+                // all pre-filters (set via flags) are checked -> start counting entries
+                entry_count.fetch_add(1, Ordering::Relaxed);
 
-                    // search for a pattern match (regex) in the remaining entries
-                    let name = quirkle.name();
-                    let captures: Vec<_> = reg.find_iter(&name).collect();
-                    if !captures.is_empty() {
-                        search_hits.fetch_add(1, Ordering::Relaxed);
+                let mut quirkle = Quirkle::new(&entry);
 
-                        // if grep_flag is set -> search for pattern matches (regex) in files
-                        if !grep_reg.as_str().is_empty() {
-                            // TODO show an error here when content unreadable??
-                            let content =
-                                fs::read_to_string(&quirkle.path).unwrap_or_else(|_| String::new());
+                // search for a pattern match (regex) in the remaining entries
+                let name = quirkle.name();
+                let captures: Vec<_> = reg.find_iter(&name).collect();
+                if !captures.is_empty() {
+                    search_hits.fetch_add(1, Ordering::Relaxed);
 
-                            if grep_reg.is_match(&content) {
-                                grep_files.fetch_add(1, Ordering::Relaxed);
+                    // if grep_flag is set -> search for pattern matches (regex) in files
+                    if !grep_reg.as_str().is_empty() {
+                        // TODO show an error here when content unreadable??
+                        let content =
+                            fs::read_to_string(&quirkle.path).unwrap_or_else(|_| String::new());
 
-                                if !matching_files_flag {
-                                    let mut linenumber = 0;
-                                    for line in content.lines() {
-                                        linenumber += 1;
-                                        let line = line.trim(); // remove leading & trailing whitespace (including newlines)
-                                        let grep_captures: Vec<_> =
-                                            grep_reg.find_iter(&line).collect();
+                        if grep_reg.is_match(&content) {
+                            grep_files.fetch_add(1, Ordering::Relaxed);
 
-                                        if !grep_captures.is_empty() {
-                                            grep_patterns
-                                                .fetch_add(grep_captures.len(), Ordering::Relaxed);
+                            if !matching_files_flag {
+                                let mut linenumber = 0;
+                                for line in content.lines() {
+                                    linenumber += 1;
+                                    let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                    let grep_captures: Vec<_> = grep_reg.find_iter(&line).collect();
 
-                                            if raw_flag {
-                                                let qline =
-                                                    QLine::new(linenumber, line.to_string());
-                                                quirkle.add_line(qline);
-                                            } else {
-                                                let highlighted_line =
-                                                    highlight_capture(&line, &grep_captures, true);
+                                    if !grep_captures.is_empty() {
+                                        grep_patterns
+                                            .fetch_add(grep_captures.len(), Ordering::Relaxed);
 
-                                                let qline =
-                                                    QLine::new(linenumber, highlighted_line);
-                                                quirkle.add_line(qline);
-                                            }
+                                        if raw_flag {
+                                            let qline = QLine::new(linenumber, line.to_string());
+                                            quirkle.add_line(qline);
+                                        } else {
+                                            let highlighted_line =
+                                                highlight_capture(&line, &grep_captures, true);
+
+                                            let qline = QLine::new(linenumber, highlighted_line);
+                                            quirkle.add_line(qline);
                                         }
                                     }
                                 }
-
-                                if !count_flag {
-                                    quirkle.show(&handle, &captures, matching_files_flag, raw_flag);
-                                }
                             }
-                        } else {
+
                             if !count_flag {
                                 quirkle.show(&handle, &captures, matching_files_flag, raw_flag);
                             }
                         }
+                    } else {
+                        if !count_flag {
+                            quirkle.show(&handle, &captures, matching_files_flag, raw_flag);
+                        }
                     }
-                });
-        });
+                }
+            });
 
         // empty bufwriter
         handle.lock().unwrap().flush().unwrap_or_else(|err| {
@@ -605,29 +598,6 @@ fn collect_entries(
         .collect();
 
     entries
-}
-
-// TODO benchmark different sizes
-// TODO how to determin the right chunk size?
-// TODO Ideas:
-// TODO     - based on L2/L3 cache size
-// TODO     - based number of files
-// TODO     - based average file size
-fn calculate_chunk_size(num_entries: usize) -> usize {
-    // INFO     - Few files (<100)                           => 1 (no chunks, process individually)
-    // INFO     - Moderate workload (100-10k files)          => 8-16 (balanced performance)
-    // INFO     - Huge workload (10k+ files)	             => 4 × CPU cores (aggressive batching)
-    // INFO OR  -----------------------------------------------------------------------------------
-    // INFO     - If files are small and fast to process     => Larger chunks (8-64)
-    // INFO     - If files are large and slow to process     => Smaller chunks (4-8)
-    // INFO     - If CPU has many cores (16+ threads)        =>  Larger chunks (16-64)
-    // INFO     - If CPU has few cores (4-8 threads)         => Smaller chunks (4-16)
-    match num_entries {
-        0..=1000 => 1 as usize,
-        1001..=10000 => current_num_threads() / 4,
-        10001..=100000 => current_num_threads() / 2,
-        100001.. => current_num_threads(),
-    }
 }
 
 fn get_filename(entry: &DirEntry) -> String {
