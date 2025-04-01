@@ -58,6 +58,7 @@ fn main() {
     let raw_flag = matches.get_flag("raw");
     let show_errors_flag = matches.get_flag("show-errors");
     let stats_flag = matches.get_flag("stats");
+    let unicode_flag = matches.get_flag("no_unicode");
 
     let depth_flag = set_search_depth(&matches);
 
@@ -76,7 +77,7 @@ fn main() {
         }
 
         // get search pattern from arguments -> build regex
-        let reg = build_regex(args[0].as_str(), case_insensitive_flag);
+        let reg = build_regex(args[0].as_str(), case_insensitive_flag, unicode_flag);
 
         // get search path from arguments
         let mut path = Path::new(&args[1]).to_path_buf();
@@ -114,7 +115,7 @@ fn main() {
             .unwrap_or(&String::new())
             .to_string();
 
-        let grep_reg = build_regex(&greps, case_insensitive_flag);
+        let grep_reg = build_regex(&greps, case_insensitive_flag, unicode_flag);
 
         let start = Instant::now();
         let entry_count = Arc::new(AtomicUsize::new(0));
@@ -528,6 +529,20 @@ fn sg() -> Command {
                 ))
                 .action(ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("no_unicode")
+                .short('u')
+                .long("no-unicode")
+                .help("Exclude unicode in search")
+                .long_help(format!(
+                    "{}\n{}\n{}\n{}",
+                    "Disables unicode mode [Default: Enabled]",
+                    "With Unicode character classes like \\p{Letter} and \\p{Greek} are available",
+                    "Note that if Unicode mode is disabled, then the regex will fail to compile if it could match invalid UTF-8",
+                    "More information: https://docs.rs/regex/latest/regex/struct.RegexBuilder.html#method.unicode",
+                ))
+                .action(ArgAction::SetFalse),
+        )
         .subcommand(
             Command::new("examples")
                 .long_flag("examples")
@@ -563,11 +578,10 @@ fn set_search_depth(matches: &ArgMatches) -> u32 {
     }
 }
 
-fn build_regex(patterns: &str, case_insensitive_flag: bool) -> Regex {
+fn build_regex(patterns: &str, case_insensitive_flag: bool, unicode_flag: bool) -> Regex {
     let reg = RegexBuilder::new(patterns)
         .case_insensitive(case_insensitive_flag)
-        // TODO new flag -> include unicode (e.g. greek letters, etc.) in search -> otherwise only ASCII is allowed
-        .unicode(false)
+        .unicode(unicode_flag)
         .build()
         .unwrap_or_else(|err| {
             error!("Unable to get regex pattern: {err}");
