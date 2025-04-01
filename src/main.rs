@@ -845,6 +845,13 @@ fn show_regex_syntax() {
 [a&&b]        An empty character class matching nothing        
         "###
     );
+    println!("\n{}", "Composites:".bold());
+    println!(
+        r###"
+xy    concatenation (x followed by y)
+x|y   alternation (x or y, prefer x)
+        "###
+    );
     println!("\n{}", "Repetitions:".bold());
     println!(
         r###"
