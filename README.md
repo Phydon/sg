@@ -9,9 +9,6 @@ Simple recursive file and pattern search via regex patterns
 ## Examples
 
 
-> todo add more examples
-
-
 ### Example 1
 
 - list everything in the current directory
@@ -67,7 +64,7 @@ Usage: sg [REGEX] [PATH] [OPTIONS]
        sg [COMMAND]
 
 Commands:
-  examples, --examples  Show examples
+  examples, --examples  Show examples [aliases: example, --example]
   log, -L, --log        Show content of the log file
   syntax, -S, --syntax  Show regex syntax information
   help                  Print this message or the help of the given subcommand(s)
@@ -89,6 +86,7 @@ Options:
   -r, --raw                         Don`t colourize the search output and speed up the output printing
       --show-errors                 Show possible filesystem errors [aliases: show-error]
   -s, --stats                       Show short search statistics at the end [aliases: statistic, statistics]
+  -u, --no-unicode                  Exclude unicode in search
   -h, --help                        Print help (see more with '--help')
   -V, --version                     Print version
 ```
@@ -100,7 +98,7 @@ Usage: sg [REGEX] [PATH] [OPTIONS]
        sg [COMMAND]
 
 Commands:
-  examples, --examples  Show examples
+  examples, --examples  Show examples [aliases: example, --example]
   log, -L, --log        Show content of the log file
   syntax, -S, --syntax  Show regex syntax information
   help                  Print this message or the help of the given subcommand(s)
@@ -160,7 +158,6 @@ Options:
   -r, --raw
           Focus on performance
           Don`t colourize the search output
-          Write the output via BufWriter
           Print raw filepaths
 
       --show-errors
@@ -175,6 +172,12 @@ Options:
           Output: ['elapsed time'  'searched number of files' 'errors' 'file search hits' 'grep hits']
 
           [aliases: statistic, statistics]
+
+  -u, --no-unicode
+          Disables unicode mode [Default: Enabled]
+          With Unicode character classes like \p{Letter} and \p{Greek} are available
+          Note that if Unicode mode is disabled, then the regex will fail to compile if it could match invalid UTF-8
+          More information: https://docs.rs/regex/latest/regex/struct.RegexBuilder.html#method.unicode
 
   -h, --help
           Print help (see a summary with '-h')
