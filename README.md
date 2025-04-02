@@ -49,6 +49,15 @@ sg . .\Documents -e txt -c
 ```
 
 
+### Example 5
+
+- search e-mails (e.g.: leann.phydon@gmail.com) in files
+
+```shell
+$ sg . . -g "[\w\d]+\.[\w\d]+@[\w]+\.[\w]+"
+```
+
+
 ## Usage
 
 ### Short Usage

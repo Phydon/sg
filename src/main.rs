@@ -821,6 +821,15 @@ $ sg . . -g "todo|fixme" -i
 $ sg . .\Documents -e txt -c
     "###
     );
+
+    println!("\n{}\n----------", "Example 5".bold());
+    println!(
+        r###"
+- search e-mails (e.g.: leann.phydon@gmail.com) in files
+
+$ sg . . -g "[\w\d]+\.[\w\d]+@[\w]+\.[\w]+"
+    "###
+    );
 }
 
 fn show_regex_syntax() {
