@@ -545,7 +545,7 @@ fn sg() -> Command {
         .subcommand(
             Command::new("examples")
                 .long_flag("examples")
-                .alias("example")
+                .visible_aliases(["example", "--example"])
                 .about("Show examples"),
         )
         .subcommand(
