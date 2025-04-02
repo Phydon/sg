@@ -240,9 +240,8 @@ fn main() {
     } else if let Some(_) = matches.subcommand_matches("syntax") {
         show_regex_syntax();
     } else {
-        unreachable!();
-        // sg().print_help();
-        // process::exit(0)
+        sg().print_help().unwrap();
+        process::exit(0);
     }
 }
 
