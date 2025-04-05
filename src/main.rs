@@ -362,7 +362,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.1.2")
+        .version("1.1.3")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
@@ -906,7 +906,7 @@ $               the end of a haystack (or end-of-line with multi-line mode)
 \b{{end-half}}    half of a Unicode end-of-word boundary (\W|\z on the right)        
         "###
     );
-    println!("\n{}", "Grouping and flags:".bold());
+    println!("\n{}", "Grouping:".bold());
     println!(
         r###"
 (exp)          numbered capture group (indexed by opening parenthesis)
@@ -960,7 +960,7 @@ x     verbose mode, ignores whitespace and allow line comments (starting with `#
 \D, \S, \W      negated Perl character class        
         "###
     );
-    println!("\n{}", "Perl character classes:".bold());
+    println!("\n{}", "Perl character classes (unicode friendly):".bold());
     println!(
         r###"
 \d     digit (\p{{Nd}})
