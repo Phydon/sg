@@ -22,7 +22,6 @@ use rayon::prelude::*;
 use regex::{Match, Regex, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
 
-// TODO dynamically adjust buffer capacity? (based on number of files? size of file content could be a problem (check grep_flag)??)
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
 fn main() {
@@ -125,8 +124,6 @@ fn main() {
         let grep_patterns = Arc::new(AtomicUsize::new(0));
 
         let entries = collect_entries(path, depth_flag, no_hidden_flag);
-
-        // TODO dynamically set buffer size here, based on number of files?? (check grep_flag??))
 
         entries
             .into_par_iter()
