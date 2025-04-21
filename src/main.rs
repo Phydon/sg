@@ -224,9 +224,12 @@ fn main() {
 
             println!(
                 "[{}  {} {} {}]",
-                format!("{:?}", start.elapsed()).bright_blue(),
+                format!("{:?}", start.elapsed()).truecolor(95, 134, 217),
                 entry_count.load(Ordering::Relaxed).to_string().dimmed(),
-                error_count.load(Ordering::Relaxed).to_string().bright_red(),
+                error_count
+                    .load(Ordering::Relaxed)
+                    .to_string()
+                    .truecolor(217, 83, 96),
                 colorized_hits
             );
         }
@@ -271,7 +274,7 @@ impl QLine {
         } else {
             format!(
                 "  {}: {}",
-                self.linenumber.to_string().truecolor(250, 0, 104),
+                self.linenumber.to_string().truecolor(217, 83, 96),
                 self.oneliner
             )
         }
@@ -348,18 +351,18 @@ fn sg() -> Command {
         .bin_name("sg")
         .before_help(format!(
             "{}\n{}",
-            "SIMPLE GREP".bold().truecolor(250, 0, 104),
+            "SIMPLE GREP".bold().truecolor(217, 83, 96),
             "Leann Phydon <leann.phydon@gmail.com>".italic().dimmed()
         ))
         .about("Simple file and pattern search")
         .before_long_help(format!(
             "{}\n{}",
-            "SIMPLE GREP".bold().truecolor(250, 0, 104),
+            "SIMPLE GREP".bold().truecolor(217, 83, 96),
             "Leann Phydon <leann.phydon@gmail.com>".italic().dimmed()
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.1.3")
+        .version("1.1.4")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
@@ -639,9 +642,8 @@ fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String
     for cap in captures {
         new.push_str(&content[last_match..cap.start()]);
 
-        // TODO change to fixed colors (don't use standard terminal colours)
         let pattern = if grep {
-            cap.as_str().bright_yellow().to_string()
+            cap.as_str().truecolor(240, 215, 117).to_string()
         } else {
             cap.as_str().truecolor(59, 179, 140).to_string()
         };
@@ -772,7 +774,7 @@ fn colorize_hits(hits: String) -> String {
         format!(
             "{} {}",
             hits[0].truecolor(59, 179, 140),
-            hits[1].bright_yellow()
+            hits[1].truecolor(240, 215, 117)
         )
     };
 
@@ -1037,7 +1039,7 @@ fn show_log_file(config_dir: &PathBuf) -> io::Result<String> {
             return Ok(format!(
                 "{} {}",
                 "No log file found:"
-                    .truecolor(250, 0, 104)
+                    .truecolor(217, 83, 96)
                     .bold()
                     .to_string(),
                 log_path.display()
