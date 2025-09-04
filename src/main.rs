@@ -17,7 +17,7 @@ use std::{
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
-use log::{error, warn};
+use log::{error, info, warn};
 use rayon::prelude::*;
 use regex::{Match, Regex, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
@@ -133,7 +133,7 @@ fn main() {
                     error_count.fetch_add(1, Ordering::Relaxed);
 
                     if show_errors_flag {
-                        show_errors(&err);
+                        show_walk_errors(&err);
                     }
 
                     None
@@ -159,9 +159,16 @@ fn main() {
 
                     // if grep_flag is set -> search for pattern matches (regex) in files
                     if !grep_reg.as_str().is_empty() {
-                        // TODO show an error here when content unreadable??
-                        let content =
-                            fs::read_to_string(&quirkle.path).unwrap_or_else(|_| String::new());
+                        // TODO FIXME handle non-UTF8 data
+                        let content = fs::read_to_string(&quirkle.path).unwrap_or_else(|err| {
+                            error_count.fetch_add(1, Ordering::Relaxed);
+
+                            if show_errors_flag {
+                                show_content_errors(&entry, &err);
+                            }
+
+                            String::new()
+                        });
 
                         if grep_reg.is_match(&content) {
                             grep_files.fetch_add(1, Ordering::Relaxed);
@@ -362,7 +369,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.1.3")
+        .version("1.1.4")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
@@ -506,11 +513,11 @@ fn sg() -> Command {
             Arg::new("show-errors")
                 .long("show-errors")
                 .visible_alias("show-error")
-                .help("Show possible filesystem errors")
+                .help("Show possible filesystem warnings and errors")
                 .long_help(format!(
                     "{}\n{}",
-                    "Show possible filesystem errors",
-                    "For example for situations such as insufficient permissions",
+                    "Show possible filesystem warnings and errors",
+                    "For example in case of insufficient permissions or unreadable non-UTF-8 data",
                 ))
                 .action(ArgAction::SetTrue),
         )
@@ -712,15 +719,15 @@ fn extension_filter(entry: &DirEntry, extensions: &Vec<String>) -> bool {
     true
 }
 
-fn show_errors(err: &walkdir::Error) {
+fn show_walk_errors(err: &walkdir::Error) {
     let path = err.path().unwrap_or(Path::new("")).display();
     if let Some(inner) = err.io_error() {
         match inner.kind() {
             io::ErrorKind::InvalidData => {
-                warn!("Entry \'{}\' contains invalid data: {}", path, inner)
+                info!("Entry \'{}\' contains invalid data: {}", path, inner)
             }
             io::ErrorKind::NotFound => {
-                warn!("Entry \'{}\' not found: {}", path, inner);
+                info!("Entry \'{}\' not found: {}", path, inner);
             }
             io::ErrorKind::PermissionDenied => {
                 warn!("Missing permission to read entry \'{}\': {}", path, inner)
@@ -731,6 +738,27 @@ fn show_errors(err: &walkdir::Error) {
                     path, inner
                 )
             }
+        }
+    }
+}
+
+fn show_content_errors(path: &DirEntry, err: &io::Error) {
+    let path = path.path().display();
+    match err.kind() {
+        io::ErrorKind::InvalidData => {
+            info!("Entry \'{}\' contains invalid data: {}", path, err)
+        }
+        io::ErrorKind::NotFound => {
+            info!("Entry \'{}\' not found: {}", path, err);
+        }
+        io::ErrorKind::PermissionDenied => {
+            warn!("Missing permission to read entry \'{}\': {}", path, err)
+        }
+        _ => {
+            error!(
+                "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
+                path, err
+            )
         }
     }
 }
