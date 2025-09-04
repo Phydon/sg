@@ -719,6 +719,7 @@ fn extension_filter(entry: &DirEntry, extensions: &Vec<String>) -> bool {
     true
 }
 
+// FIXME slows down performance -> no bufwriter
 fn show_walk_errors(err: &walkdir::Error) {
     let path = err.path().unwrap_or(Path::new("")).display();
     if let Some(inner) = err.io_error() {
@@ -742,6 +743,7 @@ fn show_walk_errors(err: &walkdir::Error) {
     }
 }
 
+// FIXME slows down performance -> no bufwriter
 fn show_content_errors(path: &DirEntry, err: &io::Error) {
     let path = path.path().display();
     match err.kind() {
