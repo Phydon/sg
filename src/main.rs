@@ -1,7 +1,6 @@
 // TODO read path from stdin?? (echo "C:/Directory/" | sg "todo|fixme" -i)
-// TODO only list number of files with specified file extensions
-// TODO     e.g. 'sg . . --only-extensions rs py' would only list all rust and python files
-// TODO     e.g. 'sg . . --only-extensions rs py -c' would only count all rust and python files
+// TODO only list the file extensions in the given directory and count the number of files
+// TODO     e.g. 'sg . . --only-extensions' would only count what file extensions are in the current directory and count how many files with what extension
 use std::{
     env,
     ffi::OsStr,
