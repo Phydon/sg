@@ -1,4 +1,7 @@
 // TODO read path from stdin?? (echo "C:/Directory/" | sg "todo|fixme" -i)
+// TODO only list number of files with specified file extensions
+// TODO     e.g. 'sg . . --only-extensions rs py' would only list all rust and python files
+// TODO     e.g. 'sg . . --only-extensions rs py -c' would only count all rust and python files
 use std::{
     env,
     ffi::OsStr,
@@ -22,6 +25,7 @@ use rayon::prelude::*;
 use regex::{Match, Regex, RegexBuilder, RegexSet};
 use walkdir::{DirEntry, WalkDir};
 
+// TODO reduce buffer size for quicker user feedback of found files??
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
 fn main() {
@@ -327,7 +331,7 @@ impl Quirkle {
             matches.push(self.path);
         } else {
             let name = highlight_capture(&self.name, captures, false);
-            // make file clickalbe on windows by adding 'file://'
+            // make file clickable on windows by adding 'file://'
             // TODO check if terminal accepts clickable paths
             let path = format!("file://{}/{}", self.parent, &name);
             matches.push(path);
