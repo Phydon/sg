@@ -1,4 +1,6 @@
 // TODO read path from stdin?? (echo "C:/Directory/" | sg "todo|fixme" -i)
+// TODO exclude javascript files (.js) by default to exclude large web content from search that "pollutes" the output??
+// TODO     javascript files have to explicitly added via '-e js' flag?
 // TODO only list the file extensions in the given directory and count the number of files
 // TODO     e.g. 'sg . . --only-extensions' would only count what file extensions are in the current directory and count how many files with what extension
 use std::{
