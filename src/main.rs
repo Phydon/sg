@@ -624,6 +624,10 @@ fn get_filename(entry: &DirEntry) -> String {
 }
 
 fn get_parent_path(entry: DirEntry) -> String {
+    // FIXME make path always absolute to make it clickable
+    // FIXME if a specific file is given as argument, the file path is not clickable, because the file path is relative and not absolute
+    // FIXME e.g.: "sg test ./test.txt" -> filepath not clickable
+    // FIXME "sg test ." -> filepath clickable
     entry
         .path()
         .parent()
