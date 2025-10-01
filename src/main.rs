@@ -282,10 +282,10 @@ impl QLine {
 
     fn merge(self, raw_flag: bool) -> String {
         if raw_flag {
-            format!("  {}: {}", self.linenumber, self.oneliner)
+            format!(" {}: {}", self.linenumber, self.oneliner)
         } else {
             format!(
-                "  {}: {}",
+                " {}: {}",
                 self.linenumber.to_string().truecolor(217, 83, 96),
                 self.oneliner
             )
@@ -350,6 +350,7 @@ impl Quirkle {
                     .collect();
 
                 matches.append(&mut lines);
+                matches.push("".to_string());
             }
         }
 
@@ -374,7 +375,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.1.4")
+        .version("1.1.5")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
