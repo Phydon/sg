@@ -2,9 +2,8 @@
 
 ***S**imple **G**rep*
 
-> combining [sf](https://github.com/Phydon/sf) and [mg](https://github.com/Phydon/mg)
-
 Simple recursive file and pattern search via regex patterns
+
 
 ## Examples
 
