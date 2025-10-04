@@ -4,12 +4,11 @@
 // TODO only list the file extensions in the given directory and count the number of files
 // TODO     e.g. 'sg . . --only-extensions' would only count what file extensions are in the current directory and count how many files with what extension
 use std::{
-    env,
     ffi::OsStr,
     fs,
     io::{self, BufWriter, Stdout, Write},
     os::windows::fs::MetadataExt,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
     process,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -87,22 +86,13 @@ fn main() {
         let mut path = Path::new(&args[1]).to_path_buf();
 
         if !path.is_absolute() {
-            let current_dir = env::current_dir().unwrap_or_else(|err| {
-                error!("Unable to get current directory: {err}");
-                process::exit(1);
-            });
-
-            let path_str = path.to_string_lossy().to_string();
-
-            // accept "." as current directory
-            if path_str == "." {
-                path = current_dir;
-            } else {
-                // convert relative to absolute path
-                let path_stem = path.file_name().unwrap().to_os_string();
-                path = current_dir;
-                path.push(path_stem);
-            }
+            path = path::absolute(path).unwrap_or_else(|err| {
+                error!(
+                    "{}",
+                    format!("Unable to convert {} to absolute path: {}", &args[1], err)
+                );
+                process::exit(0);
+            })
         }
 
         // get possible file extensions for filtering
