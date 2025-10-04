@@ -375,7 +375,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.1.5")
+        .version("1.1.6")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
@@ -624,17 +624,30 @@ fn get_filename(entry: &DirEntry) -> String {
 }
 
 fn get_parent_path(entry: DirEntry) -> String {
-    // FIXME make path always absolute to make it clickable
-    // FIXME if a specific file is given as argument, the file path is not clickable, because the file path is relative and not absolute
-    // FIXME e.g.: "sg test ./test.txt" -> filepath not clickable
-    // FIXME "sg test ." -> filepath clickable
-    entry
-        .path()
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .to_string_lossy()
-        .to_string()
-        .replace("\\", "/")
+    // make path always absolute to make it clickable
+    let mut ancestor = PathBuf::new();
+    if !entry.path().is_absolute() {
+        let current_dir = env::current_dir().unwrap_or_else(|err| {
+            error!("Unable to get current directory: {err}");
+            process::exit(1);
+        });
+        ancestor.push(current_dir);
+
+        ancestor.push(PathBuf::from(
+            entry
+                .path()
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .file_name()
+                .unwrap_or_else(|| OsStr::new("")),
+        ));
+    } else {
+        ancestor.push(entry.path().parent().unwrap_or_else(|| Path::new("")));
+    }
+
+    let parent = ancestor.to_string_lossy().to_string().replace("\\", "/");
+
+    parent
 }
 
 fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: Vec<String>) {
