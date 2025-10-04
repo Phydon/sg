@@ -86,13 +86,23 @@ fn main() {
         // get search path from arguments
         let mut path = Path::new(&args[1]).to_path_buf();
 
-        // accept "." as current directory
-        if path.as_path().to_string_lossy().to_string() == "." {
+        if !path.is_absolute() {
             let current_dir = env::current_dir().unwrap_or_else(|err| {
                 error!("Unable to get current directory: {err}");
                 process::exit(1);
             });
-            path.push(current_dir);
+
+            let path_str = path.to_string_lossy().to_string();
+
+            // accept "." as current directory
+            if path_str == "." {
+                path = current_dir;
+            } else {
+                // convert relative to absolute path
+                let path_stem = path.file_name().unwrap().to_os_string();
+                path = current_dir;
+                path.push(path_stem);
+            }
         }
 
         // get possible file extensions for filtering
@@ -624,30 +634,15 @@ fn get_filename(entry: &DirEntry) -> String {
 }
 
 fn get_parent_path(entry: DirEntry) -> String {
-    // make path always absolute to make it clickable
-    let mut ancestor = PathBuf::new();
-    if !entry.path().is_absolute() {
-        let current_dir = env::current_dir().unwrap_or_else(|err| {
-            error!("Unable to get current directory: {err}");
-            process::exit(1);
-        });
-        ancestor.push(current_dir);
+    assert!(entry.path().is_absolute());
 
-        ancestor.push(PathBuf::from(
-            entry
-                .path()
-                .parent()
-                .unwrap_or_else(|| Path::new(""))
-                .file_name()
-                .unwrap_or_else(|| OsStr::new("")),
-        ));
-    } else {
-        ancestor.push(entry.path().parent().unwrap_or_else(|| Path::new("")));
-    }
-
-    let parent = ancestor.to_string_lossy().to_string().replace("\\", "/");
-
-    parent
+    entry
+        .path()
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .to_string_lossy()
+        .to_string()
+        .replace("\\", "/")
 }
 
 fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: Vec<String>) {
