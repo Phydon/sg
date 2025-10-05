@@ -612,7 +612,7 @@ fn collect_entries(
     let entries: Vec<_> = WalkDir::new(path)
         .max_depth(depth_flag as usize) // set maximum search depth
         .into_iter()
-        // TODO bottleneck if it has to filter out hidden files
+        // TODO filter hidden by default?
         .filter_entry(|entry| filter_hidden(entry, no_hidden_flag))
         .collect();
 
@@ -673,23 +673,16 @@ fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String
 
 // check entries if hidden and compare to hidden flag
 fn filter_hidden(entry: &DirEntry, no_hidden_flag: bool) -> bool {
-    if no_hidden_flag && is_hidden(&entry.path().to_path_buf()).unwrap_or(false) {
+    if no_hidden_flag && is_hidden(&entry).unwrap_or(false) {
         return false;
     }
 
     true
 }
 
-// TODO bottleneck
-fn is_hidden(file_path: &PathBuf) -> std::io::Result<bool> {
-    let metadata = fs::metadata(file_path)?;
-    let attributes = metadata.file_attributes();
-
-    if (attributes & 0x2) > 0 {
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+// TODO include everything that starts "." (on windows)??
+fn is_hidden(entry: &DirEntry) -> std::io::Result<bool> {
+    Ok((entry.metadata()?.file_attributes() & 0x2) > 0)
 }
 
 fn filetype_filter(entry: &DirEntry, grep_reg: &Regex, file_flag: bool, dir_flag: bool) -> bool {
