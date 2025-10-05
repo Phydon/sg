@@ -316,10 +316,6 @@ impl Quirkle {
     }
 
     fn add_line(&mut self, qline: QLine) {
-        // match &mut self.lines {
-        //     Some(lines) => lines.push(qline),
-        //     None => self.lines = Some(vec![qline]),
-        // }
         self.lines.get_or_insert_with(Vec::new).push(qline);
     }
 
@@ -658,6 +654,13 @@ fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: Vec<String>) {
             process::exit(0);
         }
     }
+
+    // TODO this would slow down the performance significantly when processing a lot to stdout,
+    // TODO but would provide quicker feedback to user
+    // if let Err(err) = handle_lock.flush() {
+    //     error!("Error flushing stdout buffer: {err}");
+    //     // we do not exit here, as the content might have been mostly written
+    // }
 }
 
 fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String {
