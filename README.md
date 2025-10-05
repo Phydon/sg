@@ -81,9 +81,9 @@ Options:
   -f, --file                        Search only in filenames for the regex [aliases: files]
   -g, --grep <REGEX>                Search for specific regex pattern in files
   -m, --matching-files              Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines [aliases: matches]
-  -H, --no-hidden                   Exclude hidden files and directories from search
+  -H, --hidden                      Include hidden files and directories in search
   -r, --raw                         Don`t colourize the search output and speed up the output printing
-      --show-errors                 Show possible filesystem errors [aliases: show-error]
+      --show-errors                 Show possible filesystem warnings and errors [aliases: show-error]
   -s, --stats                       Show short search statistics at the end [aliases: statistic, statistics]
   -u, --no-unicode                  Exclude unicode in search
   -h, --help                        Print help (see more with '--help')
@@ -150,9 +150,11 @@ Options:
 
           [aliases: matches]
 
-  -H, --no-hidden
-          Exclude hidden files and directories from search
-          If a directory is hidden, all its content will be skiped as well
+  -H, --hidden
+          Include hidden files and directories in search
+          If a directory is hidden, all its content counts as hidden as well
+          Everything starting with '.' counts as hidden as well
+          Excludes hidden files and directories by default
 
   -r, --raw
           Focus on performance
@@ -160,8 +162,8 @@ Options:
           Print raw filepaths
 
       --show-errors
-          Show possible filesystem errors
-          For example for situations such as insufficient permissions
+          Show possible filesystem warnings and errors
+          For example in case of insufficient permissions or unreadable non-UTF-8 data
 
           [aliases: show-error]
 
