@@ -164,16 +164,19 @@ fn main() {
 
                     // if grep_flag is set -> search for pattern matches (regex) in files
                     if !grep_reg.as_str().is_empty() {
-                        // TODO FIXME handle non-UTF8 data
-                        let content = fs::read_to_string(&quirkle.path).unwrap_or_else(|err| {
-                            error_count.fetch_add(1, Ordering::Relaxed);
+                        // TODO handle non-UTF8 data???
+                        let content = match fs::read_to_string(&quirkle.path) {
+                            Ok(s) => s,
+                            Err(err) => {
+                                error_count.fetch_add(1, Ordering::Relaxed);
 
-                            if show_errors_flag {
-                                show_content_errors(&entry, &err);
+                                if show_errors_flag {
+                                    show_content_errors(&entry, &err);
+                                }
+
+                                return;
                             }
-
-                            String::new()
-                        });
+                        };
 
                         if grep_reg.is_match(&content) {
                             grep_files.fetch_add(1, Ordering::Relaxed);
