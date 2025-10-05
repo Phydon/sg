@@ -280,7 +280,7 @@ impl QLine {
         }
     }
 
-    fn merge(self, raw_flag: bool) -> String {
+    fn merge(&self, raw_flag: bool) -> String {
         if raw_flag {
             format!(" {}: {}", self.linenumber, self.oneliner)
         } else {
@@ -313,10 +313,11 @@ impl Quirkle {
     }
 
     fn add_line(&mut self, qline: QLine) {
-        match &mut self.lines {
-            Some(lines) => lines.push(qline),
-            None => self.lines = Some(vec![qline]),
-        }
+        // match &mut self.lines {
+        //     Some(lines) => lines.push(qline),
+        //     None => self.lines = Some(vec![qline]),
+        // }
+        self.lines.get_or_insert_with(Vec::new).push(qline);
     }
 
     fn show(
@@ -344,8 +345,7 @@ impl Quirkle {
                     .par_iter()
                     .map(|line| {
                         // INFO order of elements will not change when using map()
-                        // TODO performance drop because of cloning
-                        line.clone().merge(raw_flag)
+                        line.merge(raw_flag)
                     })
                     .collect();
 
@@ -375,7 +375,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.1.6")
+        .version("1.1.7")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
