@@ -131,7 +131,6 @@ fn main() {
         let entries = collect_entries(path, depth_flag, hidden_flag);
 
         entries
-            .into_par_iter()
             .filter_map(|entry| match entry {
                 Ok(entry) => Some(entry),
                 Err(err) => {
@@ -144,12 +143,13 @@ fn main() {
                     None
                 }
             })
-            .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
             .filter(|entry| extension_filter(entry, &extensions))
             .filter(|entry| {
-                let name = get_filename(&entry);
-                !excludes.is_match(&name)
+                let name = entry.file_name();
+                !excludes.is_match(&name.to_string_lossy())
             })
+            .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
+            .par_bridge()
             .for_each(|entry| {
                 // all pre-filters (set via flags) are checked -> start counting entries
                 entry_count.fetch_add(1, Ordering::Relaxed);
@@ -298,7 +298,7 @@ impl QLine {
 
 impl Quirkle {
     fn new(entry: &DirEntry) -> Self {
-        let name = get_filename(&entry);
+        let name = entry.file_name().to_string_lossy().to_string();
         let parent = get_parent_path(entry.clone());
         let path = format!("{}/{}", parent, name);
         let lines = None;
@@ -341,7 +341,7 @@ impl Quirkle {
         if let Some(lines) = self.lines {
             if !matching_files_flag {
                 let mut lines: Vec<String> = lines
-                    .par_iter()
+                    .iter()
                     .map(|line| {
                         // INFO order of elements will not change when using map()
                         line.merge(raw_flag)
@@ -608,20 +608,12 @@ fn collect_entries(
     path: PathBuf,
     depth_flag: u32,
     hidden_flag: bool,
-) -> Vec<Result<DirEntry, walkdir::Error>> {
-    // TODO potential massive memory usage here -> optimize
-    let entries: Vec<_> = WalkDir::new(path)
+) -> impl Iterator<Item = Result<DirEntry, walkdir::Error>> {
+    WalkDir::new(path)
         .max_depth(depth_flag as usize) // set maximum search depth
         .into_iter()
-        // filter hidden by default
-        .filter_entry(|entry| filter_hidden(entry, hidden_flag))
-        .collect();
-
-    entries
-}
-
-fn get_filename(entry: &DirEntry) -> String {
-    entry.file_name().to_string_lossy().to_string()
+        // filter hidden entries by default
+        .filter_entry(move |entry| filter_hidden(entry, hidden_flag))
 }
 
 fn get_parent_path(entry: DirEntry) -> String {
