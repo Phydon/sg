@@ -57,7 +57,7 @@ fn main() {
     let dir_flag = matches.get_flag("dir");
     let file_flag = matches.get_flag("file");
     let matching_files_flag = matches.get_flag("matching-files");
-    let no_hidden_flag = matches.get_flag("no-hidden");
+    let hidden_flag = matches.get_flag("hidden");
     let raw_flag = matches.get_flag("raw");
     let show_errors_flag = matches.get_flag("show-errors");
     let stats_flag = matches.get_flag("stats");
@@ -128,7 +128,7 @@ fn main() {
         let grep_files = Arc::new(AtomicUsize::new(0));
         let grep_patterns = Arc::new(AtomicUsize::new(0));
 
-        let entries = collect_entries(path, depth_flag, no_hidden_flag);
+        let entries = collect_entries(path, depth_flag, hidden_flag);
 
         entries
             .into_par_iter()
@@ -491,14 +491,16 @@ fn sg() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("no-hidden")
+            Arg::new("hidden")
                 .short('H')
-                .long("no-hidden")
-                .help("Exclude hidden files and directories from search")
+                .long("hidden")
+                .help("Include hidden files and directories in search")
                 .long_help(format!(
-                    "{}\n{}",
-                    "Exclude hidden files and directories from search",
-                    "If a directory is hidden, all its content will be skiped as well",
+                    "{}\n{}\n{}\n{}",
+                    "Include hidden files and directories in search",
+                    "If a directory is hidden, all its content counts as hidden as well",
+                    "Everything starting with '.' counts as hidden as well",
+                    "Excludes hidden files and directories by default",
                 ))
                 .action(ArgAction::SetTrue),
         )
@@ -606,14 +608,14 @@ fn build_regex(patterns: &str, case_insensitive_flag: bool, unicode_flag: bool) 
 fn collect_entries(
     path: PathBuf,
     depth_flag: u32,
-    no_hidden_flag: bool,
+    hidden_flag: bool,
 ) -> Vec<Result<DirEntry, walkdir::Error>> {
     // TODO potential massive memory usage here -> optimize
     let entries: Vec<_> = WalkDir::new(path)
         .max_depth(depth_flag as usize) // set maximum search depth
         .into_iter()
-        // TODO filter hidden by default?
-        .filter_entry(|entry| filter_hidden(entry, no_hidden_flag))
+        // filter hidden by default
+        .filter_entry(|entry| filter_hidden(entry, hidden_flag))
         .collect();
 
     entries
@@ -672,17 +674,18 @@ fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String
 }
 
 // check entries if hidden and compare to hidden flag
-fn filter_hidden(entry: &DirEntry, no_hidden_flag: bool) -> bool {
-    if no_hidden_flag && is_hidden(&entry).unwrap_or(false) {
+fn filter_hidden(entry: &DirEntry, hidden_flag: bool) -> bool {
+    if !hidden_flag && is_hidden(&entry).unwrap_or(false) {
         return false;
     }
 
     true
 }
 
-// TODO include everything that starts "." (on windows)??
 fn is_hidden(entry: &DirEntry) -> std::io::Result<bool> {
-    Ok((entry.metadata()?.file_attributes() & 0x2) > 0)
+    // INFO also count everything that starts with "." on windows as hidden -> this is on purpose
+    Ok((entry.metadata()?.file_attributes() & 0x2) > 0
+        || entry.file_name().to_string_lossy().starts_with('.'))
 }
 
 fn filetype_filter(entry: &DirEntry, grep_reg: &Regex, file_flag: bool, dir_flag: bool) -> bool {
