@@ -638,14 +638,23 @@ fn get_parent_path(entry: DirEntry) -> String {
 }
 
 fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: Vec<String>) {
-    let mut handle_lock = handle.lock().unwrap();
-
-    let joined_content = content.join("\n");
-
-    writeln!(handle_lock, "{}", joined_content).unwrap_or_else(|err| {
-        error!("Error writing to stdout: {err}");
-        process::exit(1);
+    let mut handle_lock = handle.lock().unwrap_or_else(|err| {
+        // if the Mutex is poisoned, something severely wrong happened with a previous thread
+        error!("Mutex poisoned while locking stdout handle: {err}");
+        process::exit(0);
     });
+
+    for line in content {
+        if let Err(err) = handle_lock.write_all(line.as_bytes()) {
+            error!("Error writing to stdout: {err}");
+            process::exit(0);
+        }
+
+        if let Err(err) = handle_lock.write_all(b"\n") {
+            error!("Error writing newline to stdout: {err}");
+            process::exit(0);
+        }
+    }
 }
 
 fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String {
