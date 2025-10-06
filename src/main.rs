@@ -1,8 +1,12 @@
 // TODO read path from stdin?? (echo "C:/Directory/" | sg "todo|fixme" -i)
-// TODO exclude javascript files (.js | .js.map) by default to exclude large web content from search that "pollutes" the output??
-// TODO     javascript files have to explicitly added via '-e js' flag?
+//
+// TODO new flag (e.g. "--common") that set pre-filters, e.g.:
+// TODO     exclude javascript files (.js | .js.map) by default to exclude
+// TODO     large web content from search that "pollutes" the output??
+//
 // TODO only list the file extensions in the given directory and count the number of files
-// TODO     e.g. 'sg . . --only-extensions' would only count what file extensions are in the current directory and count how many files with what extension
+// TODO     e.g. 'sg . . --only-extensions' would only count what file extensions are in
+// TODO     the current directory and count how many files with what extension
 use std::{
     ffi::OsStr,
     fs,
@@ -185,7 +189,8 @@ fn main() {
                                 let mut linenumber = 0;
                                 for line in content.lines() {
                                     linenumber += 1;
-                                    let line = line.trim(); // remove leading & trailing whitespace (including newlines)
+                                    // remove leading & trailing whitespace (including newlines)
+                                    let line = line.trim();
                                     let grep_captures: Vec<_> = grep_reg.find_iter(&line).collect();
 
                                     if !grep_captures.is_empty() {
@@ -355,6 +360,531 @@ impl Quirkle {
 
         write_stdout(handle, matches);
     }
+}
+
+fn set_search_depth(matches: &ArgMatches) -> u32 {
+    if let Some(d) = matches.get_one::<String>("depth") {
+        match d.parse() {
+            Ok(depth) => return depth,
+            Err(err) => {
+                warn!("Expected an integer for the search depth: {err}");
+                process::exit(0);
+            }
+        }
+    } else {
+        // default search depth is 1000000
+        return 1000000;
+    }
+}
+
+fn build_regex(patterns: &str, case_insensitive_flag: bool, unicode_flag: bool) -> Regex {
+    let reg = RegexBuilder::new(patterns)
+        .case_insensitive(case_insensitive_flag)
+        .unicode(unicode_flag)
+        .build()
+        .unwrap_or_else(|err| {
+            error!("Unable to get regex pattern: {err}");
+            process::exit(1);
+        });
+
+    reg
+}
+
+fn collect_entries(
+    path: PathBuf,
+    depth_flag: u32,
+    hidden_flag: bool,
+) -> impl Iterator<Item = Result<DirEntry, walkdir::Error>> {
+    WalkDir::new(path)
+        .max_depth(depth_flag as usize) // set maximum search depth
+        .into_iter()
+        // filter hidden entries by default
+        .filter_entry(move |entry| filter_hidden(entry, hidden_flag))
+}
+
+fn get_parent_path(entry: DirEntry) -> String {
+    assert!(entry.path().is_absolute());
+
+    entry
+        .path()
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .to_string_lossy()
+        .to_string()
+        .replace("\\", "/")
+}
+
+fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: Vec<String>) {
+    let mut handle_lock = handle.lock().unwrap_or_else(|err| {
+        // if the Mutex is poisoned, something severely wrong happened with a previous thread
+        error!("Mutex poisoned while locking stdout handle: {err}");
+        process::exit(0);
+    });
+
+    for line in content {
+        if let Err(err) = handle_lock.write_all(line.as_bytes()) {
+            error!("Error writing to stdout: {err}");
+            process::exit(0);
+        }
+
+        if let Err(err) = handle_lock.write_all(b"\n") {
+            error!("Error writing newline to stdout: {err}");
+            process::exit(0);
+        }
+    }
+
+    // TODO this would slow down the performance significantly when processing a lot to stdout,
+    // TODO but would provide quicker feedback to user
+    // if let Err(err) = handle_lock.flush() {
+    //     error!("Error flushing stdout buffer: {err}");
+    //     // we do not exit here, as the content might have been mostly written
+    // }
+}
+
+fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String {
+    assert!(!captures.is_empty());
+
+    // pre-allocate enough memory for original content + estimated additional space
+    // for ANSI codes (est. each color adds ~20 bytes)
+    // this reduces the number of times the string's buffer needs to be reallocated as elements are added
+    let mut new = String::with_capacity(content.len() + captures.len() * 20);
+
+    let mut last_match = 0;
+    for cap in captures {
+        new.push_str(&content[last_match..cap.start()]);
+
+        let pattern = if grep {
+            cap.as_str().truecolor(240, 215, 117).to_string()
+        } else {
+            cap.as_str().truecolor(59, 179, 140).to_string()
+        };
+        new.push_str(&pattern);
+
+        last_match = cap.end();
+    }
+    new.push_str(&content[last_match..]);
+
+    new
+}
+
+// check entries if hidden and compare to hidden flag
+fn filter_hidden(entry: &DirEntry, hidden_flag: bool) -> bool {
+    if !hidden_flag && is_hidden(&entry).unwrap_or(false) {
+        return false;
+    }
+
+    true
+}
+
+fn is_hidden(entry: &DirEntry) -> std::io::Result<bool> {
+    // INFO also count everything that starts with "." on windows as hidden -> this is intentional
+    Ok((entry.metadata()?.file_attributes() & 0x2) > 0
+        || entry.file_name().to_string_lossy().starts_with('.'))
+}
+
+fn filetype_filter(entry: &DirEntry, grep_reg: &Regex, file_flag: bool, dir_flag: bool) -> bool {
+    if file_flag && !entry.file_type().is_file() {
+        return false;
+    }
+
+    if dir_flag && !entry.file_type().is_dir() {
+        return false;
+    }
+
+    // skip entry if grep flag is set and entry not file
+    if !grep_reg.as_str().is_empty() && !entry.file_type().is_file() {
+        return false;
+    }
+
+    true
+}
+
+fn extension_filter(entry: &DirEntry, extensions: &Vec<String>) -> bool {
+    if !extensions.is_empty()
+        && !extensions.iter().any(|ex| {
+            entry
+                .path()
+                .extension()
+                .unwrap_or(&OsStr::new(""))
+                .to_string_lossy()
+                .to_string()
+                == *ex
+        })
+    {
+        return false;
+    }
+
+    true
+}
+
+// FIXME slows down performance -> no bufwriter (extra bufwriter just for errors??)
+fn show_walk_errors(err: &walkdir::Error) {
+    let path = err.path().unwrap_or(Path::new("")).display();
+    if let Some(inner) = err.io_error() {
+        match inner.kind() {
+            io::ErrorKind::InvalidData => {
+                info!("Entry \'{}\' contains invalid data: {}", path, inner)
+            }
+            io::ErrorKind::NotFound => {
+                info!("Entry \'{}\' not found: {}", path, inner);
+            }
+            io::ErrorKind::PermissionDenied => {
+                warn!("Missing permission to read entry \'{}\': {}", path, inner)
+            }
+            _ => {
+                error!(
+                    "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
+                    path, inner
+                )
+            }
+        }
+    }
+}
+
+// FIXME slows down performance -> no bufwriter (extra bufwriter just for errors??)
+fn show_content_errors(path: &DirEntry, err: &io::Error) {
+    let path = path.path().display();
+    match err.kind() {
+        io::ErrorKind::InvalidData => {
+            info!("Entry \'{}\' contains invalid data: {}", path, err)
+        }
+        io::ErrorKind::NotFound => {
+            info!("Entry \'{}\' not found: {}", path, err);
+        }
+        io::ErrorKind::PermissionDenied => {
+            warn!("Missing permission to read entry \'{}\': {}", path, err)
+        }
+        _ => {
+            error!(
+                "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
+                path, err
+            )
+        }
+    }
+}
+
+fn unpack_hits(
+    grep_reg: Regex,
+    grep_files: Arc<AtomicUsize>,
+    grep_patterns: Arc<AtomicUsize>,
+    matching_files_flag: bool,
+    search_hits: Arc<AtomicUsize>,
+) -> String {
+    // format found search hits based on whether grep flag was set or not
+    // if grep flag was set, it shows:
+    //     - for found files containing matches inside the file
+    //         (shows only this number when matching_files_flag was set)
+    //     - for number of found matches (inside of files) overall
+    // if the grep flag was not set it shows one number: the number of found files
+    // containing a match inside the filename
+    let hits = if !grep_reg.as_str().is_empty() {
+        if matching_files_flag {
+            grep_files.load(Ordering::Relaxed).to_string()
+        } else {
+            format!(
+                "{} {}",
+                grep_files.load(Ordering::Relaxed).to_string(),
+                grep_patterns.load(Ordering::Relaxed).to_string(),
+            )
+        }
+    } else {
+        search_hits.load(Ordering::Relaxed).to_string()
+    };
+
+    hits
+}
+
+fn colorize_hits(hits: String) -> String {
+    // check if hits contain one or two numbers and colourize accordingly
+    let hits: Vec<_> = hits.split_whitespace().collect();
+    let colorized_hits = if hits.len() <= 1 {
+        format!("{}", hits[0].truecolor(59, 179, 140))
+    } else {
+        format!(
+            "{} {}",
+            hits[0].truecolor(59, 179, 140),
+            hits[1].truecolor(240, 215, 117)
+        )
+    };
+
+    colorized_hits
+}
+
+fn check_create_config_dir() -> io::Result<PathBuf> {
+    let mut new_dir = PathBuf::new();
+    match dirs::config_dir() {
+        Some(config_dir) => {
+            new_dir.push(config_dir);
+            new_dir.push("sg");
+            if !new_dir.as_path().exists() {
+                fs::create_dir(&new_dir)?;
+            }
+        }
+        None => {
+            error!("Unable to find config directory");
+        }
+    }
+
+    Ok(new_dir)
+}
+
+fn init_logger(config_dir: &PathBuf) {
+    let _logger = Logger::try_with_str("info") // log info, warn and error
+        .unwrap()
+        .format_for_files(detailed_format) // use timestamp for every log
+        .log_to_file(
+            FileSpec::default()
+                .directory(&config_dir)
+                .suppress_timestamp(),
+        ) // change directory for logs, no timestamps in the filename
+        .append() // use only one logfile
+        .duplicate_to_stderr(Duplicate::Info) // print infos, warnings and errors also to the console
+        .start()
+        .unwrap();
+}
+
+fn show_log_file(config_dir: &PathBuf) -> io::Result<String> {
+    let log_path = Path::new(&config_dir).join("sg.log");
+    match log_path.try_exists()? {
+        true => {
+            return Ok(format!(
+                "{} {}\n{}",
+                "Log location:".italic().dimmed(),
+                &log_path.display(),
+                fs::read_to_string(&log_path)?
+            ));
+        }
+        false => {
+            return Ok(format!(
+                "{} {}",
+                "No log file found:"
+                    .truecolor(217, 83, 96)
+                    .bold()
+                    .to_string(),
+                log_path.display()
+            ))
+        }
+    }
+}
+
+fn show_logs(config_dir: &PathBuf) {
+    if let Ok(logs) = show_log_file(&config_dir) {
+        println!("{}", "Available logs:".bold().yellow());
+        println!("{}", logs);
+    } else {
+        error!("Unable to read logs");
+        process::exit(1);
+    }
+}
+
+// TODO add more examples
+fn examples() {
+    println!("\n{}\n----------", "Example 1".bold());
+    println!(
+        r###"
+- list everything in the current directory 
+
+$ sg . . 
+    "###
+    );
+
+    println!("\n{}\n----------", "Example 2".bold());
+    println!(
+        r###"
+- find all python or rust files in the 'src' directory that contain the word 'main' or 'init' in their filename 
+
+$ sg "main|init" .\src\ -e rs py 
+    "###
+    );
+
+    println!("\n{}\n----------", "Example 3".bold());
+    println!(
+        r###"
+- find all files in the current directory that contain the words 'fixme' or 'todo'
+- search case insensitively 
+
+$ sg . . -g "todo|fixme" -i 
+    "###
+    );
+
+    println!("\n{}\n----------", "Example 4".bold());
+    println!(
+        r###"
+- count all txt-files in the 'document' directory
+
+$ sg . .\Documents -e txt -c
+    "###
+    );
+
+    println!("\n{}\n----------", "Example 5".bold());
+    println!(
+        r###"
+- search e-mails (e.g.: leann.phydon@gmail.com) in files
+
+$ sg . . -g "[\w\d]+\.[\w\d]+@[\w]+\.[\w]+"
+    "###
+    );
+}
+
+fn show_regex_syntax() {
+    println!("{}", "Regex Syntax".bold().blue());
+    println!(
+        "More information on '{}'",
+        "https://docs.rs/regex/latest/regex/#syntax".italic()
+    );
+    println!("\n{}", "Matching one character:".bold());
+    println!(
+        r###"
+.             any character except new line (includes new line with s flag)
+[0-9]         any ASCII digit
+\d            digit (\p{{Nd}})
+\D            not digit
+\pX           Unicode character class identified by a one-letter name
+\p{{Greek}}     Unicode character class (general category or script)
+\PX           Negated Unicode character class identified by a one-letter name
+\P{{Greek}}     negated Unicode character class (general category or script)
+        "###
+    );
+    println!("\n{}", "Character classes:".bold());
+    println!(
+        r###"
+[xyz]         A character class matching either x, y or z (union).
+[^xyz]        A character class matching any character except x, y and z.
+[a-z]         A character class matching any character in range a-z.
+[[:alpha:]]   ASCII character class ([A-Za-z])
+[[:^alpha:]]  Negated ASCII character class ([^A-Za-z])
+[x[^xyz]]     Nested/grouping character class (matching any character except y and z)
+[a-y&&xyz]    Intersection (matching x or y)
+[0-9&&[^4]]   Subtraction using intersection and negation (matching 0-9 except 4)
+[0-9--4]      Direct subtraction (matching 0-9 except 4)
+[a-g~~b-h]    Symmetric difference (matching `a` and `h` only)
+[\[\]]        Escaping in character classes (matching [ or ])
+[a&&b]        An empty character class matching nothing        
+        "###
+    );
+    println!("\n{}", "Composites:".bold());
+    println!(
+        r###"
+xy    concatenation (x followed by y)
+x|y   alternation (x or y, prefer x)
+        "###
+    );
+    println!("\n{}", "Repetitions:".bold());
+    println!(
+        r###"
+x*        zero or more of x (greedy)
+x+        one or more of x (greedy)
+x?        zero or one of x (greedy)
+x*?       zero or more of x (ungreedy/lazy)
+x+?       one or more of x (ungreedy/lazy)
+x??       zero or one of x (ungreedy/lazy)
+x{{n,m}}    at least n x and at most m x (greedy)
+x{{n,}}     at least n x (greedy)
+x{{n}}      exactly n x
+x{{n,m}}?   at least n x and at most m x (ungreedy/lazy)
+x{{n,}}?    at least n x (ungreedy/lazy)
+x{{n}}?     exactly n x        
+        "###
+    );
+    println!("\n{}", "Empty matches:".bold());
+    println!(
+        r###"
+^               the beginning of a haystack (or start-of-line with multi-line mode)
+$               the end of a haystack (or end-of-line with multi-line mode)
+\A              only the beginning of a haystack (even with multi-line mode enabled)
+\z              only the end of a haystack (even with multi-line mode enabled)
+\b              a Unicode word boundary (\w on one side and \W, \A, or \z on other)
+\B              not a Unicode word boundary
+\b{{start}}, \<   a Unicode start-of-word boundary (\W|\A on the left, \w on the right)
+\b{{end}}, \>     a Unicode end-of-word boundary (\w on the left, \W|\z on the right))
+\b{{start-half}}  half of a Unicode start-of-word boundary (\W|\A on the left)
+\b{{end-half}}    half of a Unicode end-of-word boundary (\W|\z on the right)        
+        "###
+    );
+    println!("\n{}", "Grouping:".bold());
+    println!(
+        r###"
+(exp)          numbered capture group (indexed by opening parenthesis)
+(?P<name>exp)  named (also numbered) capture group (names must be alpha-numeric)
+(?<name>exp)   named (also numbered) capture group (names must be alpha-numeric)
+(?:exp)        non-capturing group
+(?flags)       set flags within current group
+(?flags:exp)   set flags for exp (non-capturing)        
+        "###
+    );
+    println!("\n{}", "Flags:".bold());
+    println!(
+        r###"
+i     case-insensitive: letters match both upper and lower case
+m     multi-line mode: ^ and $ match begin/end of line
+s     allow . to match \n
+R     enables CRLF mode: when multi-line mode is enabled, \r\n is used
+U     swap the meaning of x* and x*?
+u     Unicode support (enabled by default)
+x     verbose mode, ignores whitespace and allow line comments (starting with `#`)        
+        "###
+    );
+    println!("\n{}", "Escape sequences:".bold());
+    println!(
+        r###"
+\*              literal *, applies to all ASCII except [0-9A-Za-z<>]
+\a              bell (\x07)
+\f              form feed (\x0C)
+\t              horizontal tab
+\n              new line
+\r              carriage return
+\v              vertical tab (\x0B)
+\A              matches at the beginning of a haystack
+\z              matches at the end of a haystack
+\b              word boundary assertion
+\B              negated word boundary assertion
+\b{{start}}, \<   start-of-word boundary assertion
+\b{{end}}, \>     end-of-word boundary assertion
+\b{{start-half}}  half of a start-of-word boundary assertion
+\b{{end-half}}    half of a end-of-word boundary assertion
+\123            octal character code, up to three digits (when enabled)
+\x7F            hex character code (exactly two digits)
+\x{{10FFFF}}      any hex character code corresponding to a Unicode code point
+\u007F          hex character code (exactly four digits)
+\u{{7F}}          any hex character code corresponding to a Unicode code point
+\U0000007F      hex character code (exactly eight digits)
+\U{{7F}}          any hex character code corresponding to a Unicode code point
+\p{{Letter}}      Unicode character class
+\P{{Letter}}      negated Unicode character class
+\d, \s, \w      Perl character class
+\D, \S, \W      negated Perl character class        
+        "###
+    );
+    println!("\n{}", "Perl character classes (unicode friendly):".bold());
+    println!(
+        r###"
+\d     digit (\p{{Nd}})
+\D     not digit
+\s     whitespace (\p{{White_Space}})
+\S     not whitespace
+\w     word character (\p{{Alphabetic}} + \p{{M}} + \d + \p{{Pc}} + \p{{Join_Control}})
+\W     not word character        
+        "###
+    );
+    println!("\n{}", "ASCII character classes:".bold());
+    println!(
+        r###"
+[[:alnum:]]    alphanumeric ([0-9A-Za-z])
+[[:alpha:]]    alphabetic ([A-Za-z])
+[[:ascii:]]    ASCII ([\x00-\x7F])
+[[:blank:]]    blank ([\t ])
+[[:cntrl:]]    control ([\x00-\x1F\x7F])
+[[:digit:]]    digits ([0-9])
+[[:graph:]]    graphical ([!-~])
+[[:lower:]]    lower case ([a-z])
+[[:print:]]    printable ([ -~])
+[[:punct:]]    punctuation ([!-/:-@\[-`{{}}-~])
+[[:space:]]    whitespace ([\t\n\v\f\r ])
+[[:upper:]]    upper case ([A-Z])
+[[:word:]]     word characters ([0-9A-Za-z_])
+[[:xdigit:]]   hex digit ([0-9A-Fa-f])        
+        "###
+    );
 }
 
 // build cli
@@ -574,527 +1104,4 @@ fn sg() -> Command {
                 .long_flag("syntax")
                 .about("Show regex syntax information"),
         )
-}
-
-fn set_search_depth(matches: &ArgMatches) -> u32 {
-    if let Some(d) = matches.get_one::<String>("depth") {
-        match d.parse() {
-            Ok(depth) => return depth,
-            Err(err) => {
-                warn!("Expected an integer for the search depth: {err}");
-                process::exit(0);
-            }
-        }
-    } else {
-        // default search depth is 1000000
-        return 1000000;
-    }
-}
-
-fn build_regex(patterns: &str, case_insensitive_flag: bool, unicode_flag: bool) -> Regex {
-    let reg = RegexBuilder::new(patterns)
-        .case_insensitive(case_insensitive_flag)
-        .unicode(unicode_flag)
-        .build()
-        .unwrap_or_else(|err| {
-            error!("Unable to get regex pattern: {err}");
-            process::exit(1);
-        });
-
-    reg
-}
-
-fn collect_entries(
-    path: PathBuf,
-    depth_flag: u32,
-    hidden_flag: bool,
-) -> impl Iterator<Item = Result<DirEntry, walkdir::Error>> {
-    WalkDir::new(path)
-        .max_depth(depth_flag as usize) // set maximum search depth
-        .into_iter()
-        // filter hidden entries by default
-        .filter_entry(move |entry| filter_hidden(entry, hidden_flag))
-}
-
-fn get_parent_path(entry: DirEntry) -> String {
-    assert!(entry.path().is_absolute());
-
-    entry
-        .path()
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .to_string_lossy()
-        .to_string()
-        .replace("\\", "/")
-}
-
-fn write_stdout(handle: &Arc<Mutex<BufWriter<Stdout>>>, content: Vec<String>) {
-    let mut handle_lock = handle.lock().unwrap_or_else(|err| {
-        // if the Mutex is poisoned, something severely wrong happened with a previous thread
-        error!("Mutex poisoned while locking stdout handle: {err}");
-        process::exit(0);
-    });
-
-    for line in content {
-        if let Err(err) = handle_lock.write_all(line.as_bytes()) {
-            error!("Error writing to stdout: {err}");
-            process::exit(0);
-        }
-
-        if let Err(err) = handle_lock.write_all(b"\n") {
-            error!("Error writing newline to stdout: {err}");
-            process::exit(0);
-        }
-    }
-
-    // TODO this would slow down the performance significantly when processing a lot to stdout,
-    // TODO but would provide quicker feedback to user
-    // if let Err(err) = handle_lock.flush() {
-    //     error!("Error flushing stdout buffer: {err}");
-    //     // we do not exit here, as the content might have been mostly written
-    // }
-}
-
-fn highlight_capture(content: &str, captures: &Vec<Match>, grep: bool) -> String {
-    assert!(!captures.is_empty());
-
-    // pre-allocate enough memory for original content + estimated additional space for ANSI codes (est. each color adds ~20 bytes)
-    // this reduces the number of times the string's buffer needs to be reallocated as elements are added
-    let mut new = String::with_capacity(content.len() + captures.len() * 20);
-
-    let mut last_match = 0;
-    for cap in captures {
-        new.push_str(&content[last_match..cap.start()]);
-
-        let pattern = if grep {
-            cap.as_str().truecolor(240, 215, 117).to_string()
-        } else {
-            cap.as_str().truecolor(59, 179, 140).to_string()
-        };
-        new.push_str(&pattern);
-
-        last_match = cap.end();
-    }
-    new.push_str(&content[last_match..]);
-
-    new
-}
-
-// check entries if hidden and compare to hidden flag
-fn filter_hidden(entry: &DirEntry, hidden_flag: bool) -> bool {
-    if !hidden_flag && is_hidden(&entry).unwrap_or(false) {
-        return false;
-    }
-
-    true
-}
-
-fn is_hidden(entry: &DirEntry) -> std::io::Result<bool> {
-    // INFO also count everything that starts with "." on windows as hidden -> this is on purpose
-    Ok((entry.metadata()?.file_attributes() & 0x2) > 0
-        || entry.file_name().to_string_lossy().starts_with('.'))
-}
-
-fn filetype_filter(entry: &DirEntry, grep_reg: &Regex, file_flag: bool, dir_flag: bool) -> bool {
-    if file_flag && !entry.file_type().is_file() {
-        return false;
-    }
-
-    if dir_flag && !entry.file_type().is_dir() {
-        return false;
-    }
-
-    // skip entry if grep flag is set and entry not file
-    if !grep_reg.as_str().is_empty() && !entry.file_type().is_file() {
-        return false;
-    }
-
-    true
-}
-
-fn extension_filter(entry: &DirEntry, extensions: &Vec<String>) -> bool {
-    if !extensions.is_empty()
-        && !extensions.iter().any(|ex| {
-            entry
-                .path()
-                .extension()
-                .unwrap_or(&OsStr::new(""))
-                .to_string_lossy()
-                .to_string()
-                == *ex
-        })
-    {
-        return false;
-    }
-
-    true
-}
-
-// FIXME slows down performance -> no bufwriter
-fn show_walk_errors(err: &walkdir::Error) {
-    let path = err.path().unwrap_or(Path::new("")).display();
-    if let Some(inner) = err.io_error() {
-        match inner.kind() {
-            io::ErrorKind::InvalidData => {
-                info!("Entry \'{}\' contains invalid data: {}", path, inner)
-            }
-            io::ErrorKind::NotFound => {
-                info!("Entry \'{}\' not found: {}", path, inner);
-            }
-            io::ErrorKind::PermissionDenied => {
-                warn!("Missing permission to read entry \'{}\': {}", path, inner)
-            }
-            _ => {
-                error!(
-                    "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
-                    path, inner
-                )
-            }
-        }
-    }
-}
-
-// FIXME slows down performance -> no bufwriter
-fn show_content_errors(path: &DirEntry, err: &io::Error) {
-    let path = path.path().display();
-    match err.kind() {
-        io::ErrorKind::InvalidData => {
-            info!("Entry \'{}\' contains invalid data: {}", path, err)
-        }
-        io::ErrorKind::NotFound => {
-            info!("Entry \'{}\' not found: {}", path, err);
-        }
-        io::ErrorKind::PermissionDenied => {
-            warn!("Missing permission to read entry \'{}\': {}", path, err)
-        }
-        _ => {
-            error!(
-                "Failed to access entry: \'{}\'\nUnexpected error occurred: {}",
-                path, err
-            )
-        }
-    }
-}
-
-fn unpack_hits(
-    grep_reg: Regex,
-    grep_files: Arc<AtomicUsize>,
-    grep_patterns: Arc<AtomicUsize>,
-    matching_files_flag: bool,
-    search_hits: Arc<AtomicUsize>,
-) -> String {
-    // format found search hits based on whether grep flag was set or not
-    // if grep flag was set, it shows:
-    //     - for found files containing matches inside the file
-    //         (shows only this number when matching_files_flag was set)
-    //     - for number of found matches (inside of files) overall
-    // if the grep flag was not set it shows one number: the number of found files containing a match inside the filename
-    let hits = if !grep_reg.as_str().is_empty() {
-        if matching_files_flag {
-            grep_files.load(Ordering::Relaxed).to_string()
-        } else {
-            format!(
-                "{} {}",
-                grep_files.load(Ordering::Relaxed).to_string(),
-                grep_patterns.load(Ordering::Relaxed).to_string(),
-            )
-        }
-    } else {
-        search_hits.load(Ordering::Relaxed).to_string()
-    };
-
-    hits
-}
-
-fn colorize_hits(hits: String) -> String {
-    // check if hits contain one or two numbers and colourize accordingly
-    let hits: Vec<_> = hits.split_whitespace().collect();
-    let colorized_hits = if hits.len() <= 1 {
-        format!("{}", hits[0].truecolor(59, 179, 140))
-    } else {
-        format!(
-            "{} {}",
-            hits[0].truecolor(59, 179, 140),
-            hits[1].truecolor(240, 215, 117)
-        )
-    };
-
-    colorized_hits
-}
-
-// TODO add more examples
-fn examples() {
-    println!("\n{}\n----------", "Example 1".bold());
-    println!(
-        r###"
-- list everything in the current directory 
-
-$ sg . . 
-    "###
-    );
-
-    println!("\n{}\n----------", "Example 2".bold());
-    println!(
-        r###"
-- find all python or rust files in the 'src' directory that contain the word 'main' or 'init' in their filename 
-
-$ sg "main|init" .\src\ -e rs py 
-    "###
-    );
-
-    println!("\n{}\n----------", "Example 3".bold());
-    println!(
-        r###"
-- find all files in the current directory that contain the words 'fixme' or 'todo'
-- search case insensitively 
-
-$ sg . . -g "todo|fixme" -i 
-    "###
-    );
-
-    println!("\n{}\n----------", "Example 4".bold());
-    println!(
-        r###"
-- count all txt-files in the 'document' directory
-
-$ sg . .\Documents -e txt -c
-    "###
-    );
-
-    println!("\n{}\n----------", "Example 5".bold());
-    println!(
-        r###"
-- search e-mails (e.g.: leann.phydon@gmail.com) in files
-
-$ sg . . -g "[\w\d]+\.[\w\d]+@[\w]+\.[\w]+"
-    "###
-    );
-}
-
-fn show_regex_syntax() {
-    println!("{}", "Regex Syntax".bold().blue());
-    println!(
-        "More information on '{}'",
-        "https://docs.rs/regex/latest/regex/#syntax".italic()
-    );
-    println!("\n{}", "Matching one character:".bold());
-    println!(
-        r###"
-.             any character except new line (includes new line with s flag)
-[0-9]         any ASCII digit
-\d            digit (\p{{Nd}})
-\D            not digit
-\pX           Unicode character class identified by a one-letter name
-\p{{Greek}}     Unicode character class (general category or script)
-\PX           Negated Unicode character class identified by a one-letter name
-\P{{Greek}}     negated Unicode character class (general category or script)
-        "###
-    );
-    println!("\n{}", "Character classes:".bold());
-    println!(
-        r###"
-[xyz]         A character class matching either x, y or z (union).
-[^xyz]        A character class matching any character except x, y and z.
-[a-z]         A character class matching any character in range a-z.
-[[:alpha:]]   ASCII character class ([A-Za-z])
-[[:^alpha:]]  Negated ASCII character class ([^A-Za-z])
-[x[^xyz]]     Nested/grouping character class (matching any character except y and z)
-[a-y&&xyz]    Intersection (matching x or y)
-[0-9&&[^4]]   Subtraction using intersection and negation (matching 0-9 except 4)
-[0-9--4]      Direct subtraction (matching 0-9 except 4)
-[a-g~~b-h]    Symmetric difference (matching `a` and `h` only)
-[\[\]]        Escaping in character classes (matching [ or ])
-[a&&b]        An empty character class matching nothing        
-        "###
-    );
-    println!("\n{}", "Composites:".bold());
-    println!(
-        r###"
-xy    concatenation (x followed by y)
-x|y   alternation (x or y, prefer x)
-        "###
-    );
-    println!("\n{}", "Repetitions:".bold());
-    println!(
-        r###"
-x*        zero or more of x (greedy)
-x+        one or more of x (greedy)
-x?        zero or one of x (greedy)
-x*?       zero or more of x (ungreedy/lazy)
-x+?       one or more of x (ungreedy/lazy)
-x??       zero or one of x (ungreedy/lazy)
-x{{n,m}}    at least n x and at most m x (greedy)
-x{{n,}}     at least n x (greedy)
-x{{n}}      exactly n x
-x{{n,m}}?   at least n x and at most m x (ungreedy/lazy)
-x{{n,}}?    at least n x (ungreedy/lazy)
-x{{n}}?     exactly n x        
-        "###
-    );
-    println!("\n{}", "Empty matches:".bold());
-    println!(
-        r###"
-^               the beginning of a haystack (or start-of-line with multi-line mode)
-$               the end of a haystack (or end-of-line with multi-line mode)
-\A              only the beginning of a haystack (even with multi-line mode enabled)
-\z              only the end of a haystack (even with multi-line mode enabled)
-\b              a Unicode word boundary (\w on one side and \W, \A, or \z on other)
-\B              not a Unicode word boundary
-\b{{start}}, \<   a Unicode start-of-word boundary (\W|\A on the left, \w on the right)
-\b{{end}}, \>     a Unicode end-of-word boundary (\w on the left, \W|\z on the right))
-\b{{start-half}}  half of a Unicode start-of-word boundary (\W|\A on the left)
-\b{{end-half}}    half of a Unicode end-of-word boundary (\W|\z on the right)        
-        "###
-    );
-    println!("\n{}", "Grouping:".bold());
-    println!(
-        r###"
-(exp)          numbered capture group (indexed by opening parenthesis)
-(?P<name>exp)  named (also numbered) capture group (names must be alpha-numeric)
-(?<name>exp)   named (also numbered) capture group (names must be alpha-numeric)
-(?:exp)        non-capturing group
-(?flags)       set flags within current group
-(?flags:exp)   set flags for exp (non-capturing)        
-        "###
-    );
-    println!("\n{}", "Flags:".bold());
-    println!(
-        r###"
-i     case-insensitive: letters match both upper and lower case
-m     multi-line mode: ^ and $ match begin/end of line
-s     allow . to match \n
-R     enables CRLF mode: when multi-line mode is enabled, \r\n is used
-U     swap the meaning of x* and x*?
-u     Unicode support (enabled by default)
-x     verbose mode, ignores whitespace and allow line comments (starting with `#`)        
-        "###
-    );
-    println!("\n{}", "Escape sequences:".bold());
-    println!(
-        r###"
-\*              literal *, applies to all ASCII except [0-9A-Za-z<>]
-\a              bell (\x07)
-\f              form feed (\x0C)
-\t              horizontal tab
-\n              new line
-\r              carriage return
-\v              vertical tab (\x0B)
-\A              matches at the beginning of a haystack
-\z              matches at the end of a haystack
-\b              word boundary assertion
-\B              negated word boundary assertion
-\b{{start}}, \<   start-of-word boundary assertion
-\b{{end}}, \>     end-of-word boundary assertion
-\b{{start-half}}  half of a start-of-word boundary assertion
-\b{{end-half}}    half of a end-of-word boundary assertion
-\123            octal character code, up to three digits (when enabled)
-\x7F            hex character code (exactly two digits)
-\x{{10FFFF}}      any hex character code corresponding to a Unicode code point
-\u007F          hex character code (exactly four digits)
-\u{{7F}}          any hex character code corresponding to a Unicode code point
-\U0000007F      hex character code (exactly eight digits)
-\U{{7F}}          any hex character code corresponding to a Unicode code point
-\p{{Letter}}      Unicode character class
-\P{{Letter}}      negated Unicode character class
-\d, \s, \w      Perl character class
-\D, \S, \W      negated Perl character class        
-        "###
-    );
-    println!("\n{}", "Perl character classes (unicode friendly):".bold());
-    println!(
-        r###"
-\d     digit (\p{{Nd}})
-\D     not digit
-\s     whitespace (\p{{White_Space}})
-\S     not whitespace
-\w     word character (\p{{Alphabetic}} + \p{{M}} + \d + \p{{Pc}} + \p{{Join_Control}})
-\W     not word character        
-        "###
-    );
-    println!("\n{}", "ASCII character classes:".bold());
-    println!(
-        r###"
-[[:alnum:]]    alphanumeric ([0-9A-Za-z])
-[[:alpha:]]    alphabetic ([A-Za-z])
-[[:ascii:]]    ASCII ([\x00-\x7F])
-[[:blank:]]    blank ([\t ])
-[[:cntrl:]]    control ([\x00-\x1F\x7F])
-[[:digit:]]    digits ([0-9])
-[[:graph:]]    graphical ([!-~])
-[[:lower:]]    lower case ([a-z])
-[[:print:]]    printable ([ -~])
-[[:punct:]]    punctuation ([!-/:-@\[-`{{}}-~])
-[[:space:]]    whitespace ([\t\n\v\f\r ])
-[[:upper:]]    upper case ([A-Z])
-[[:word:]]     word characters ([0-9A-Za-z_])
-[[:xdigit:]]   hex digit ([0-9A-Fa-f])        
-        "###
-    );
-}
-
-fn check_create_config_dir() -> io::Result<PathBuf> {
-    let mut new_dir = PathBuf::new();
-    match dirs::config_dir() {
-        Some(config_dir) => {
-            new_dir.push(config_dir);
-            new_dir.push("sg");
-            if !new_dir.as_path().exists() {
-                fs::create_dir(&new_dir)?;
-            }
-        }
-        None => {
-            error!("Unable to find config directory");
-        }
-    }
-
-    Ok(new_dir)
-}
-
-fn init_logger(config_dir: &PathBuf) {
-    let _logger = Logger::try_with_str("info") // log info, warn and error
-        .unwrap()
-        .format_for_files(detailed_format) // use timestamp for every log
-        .log_to_file(
-            FileSpec::default()
-                .directory(&config_dir)
-                .suppress_timestamp(),
-        ) // change directory for logs, no timestamps in the filename
-        .append() // use only one logfile
-        .duplicate_to_stderr(Duplicate::Info) // print infos, warnings and errors also to the console
-        .start()
-        .unwrap();
-}
-
-fn show_log_file(config_dir: &PathBuf) -> io::Result<String> {
-    let log_path = Path::new(&config_dir).join("sg.log");
-    match log_path.try_exists()? {
-        true => {
-            return Ok(format!(
-                "{} {}\n{}",
-                "Log location:".italic().dimmed(),
-                &log_path.display(),
-                fs::read_to_string(&log_path)?
-            ));
-        }
-        false => {
-            return Ok(format!(
-                "{} {}",
-                "No log file found:"
-                    .truecolor(217, 83, 96)
-                    .bold()
-                    .to_string(),
-                log_path.display()
-            ))
-        }
-    }
-}
-
-fn show_logs(config_dir: &PathBuf) {
-    if let Ok(logs) = show_log_file(&config_dir) {
-        println!("{}", "Available logs:".bold().yellow());
-        println!("{}", logs);
-    } else {
-        error!("Unable to read logs");
-        process::exit(1);
-    }
 }
