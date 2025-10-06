@@ -73,6 +73,7 @@ Arguments:
 
 Options:
   -i, --case-insensitive            Search case insensitively
+  -C, --common                      Set common pre-filters
   -c, --count                       Only print the number of search results
   -D, --depth <NUMBER>              Set max search depth [default: 1000000]
   -d, --dir                         Search only in directory names for the given regex [aliases: directory, directories]
@@ -109,6 +110,12 @@ Arguments:
 Options:
   -i, --case-insensitive
           Search case insensitively
+
+  -C, --common
+          Set common pre-filters
+          Excludes some files from the search, that usually pollute the output with hugh amounts of data
+          Common examples are source maps, stored in *.js.map files
+          They take thousands of lines of pretty code and turn it into only a few lines of ugly code
 
   -c, --count
           Only print the number of search results
