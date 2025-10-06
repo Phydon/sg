@@ -1,9 +1,5 @@
 // TODO read path from stdin?? (echo "C:/Directory/" | sg "todo|fixme" -i)
 //
-// TODO new flag (e.g. "--common") that set pre-filters, e.g.:
-// TODO     exclude javascript files (.js | .js.map) by default to exclude
-// TODO     large web content from search that "pollutes" the output??
-//
 // TODO only list the file extensions in the given directory and count the number of files
 // TODO     e.g. 'sg . . --only-extensions' would only count what file extensions are in
 // TODO     the current directory and count how many files with what extension
@@ -32,6 +28,12 @@ use walkdir::{DirEntry, WalkDir};
 // TODO reduce buffer size for quicker user feedback of found files??
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
+// TODO add other useful pre-filters
+const COMMON_PRE_FILTERS: &[&str] = &[
+    r"\.js.map$",     // javascript source map
+    r"index\..*\.js", // javascript index file
+];
+
 fn main() {
     // INFO don`t lock stdout, otherwise unable to handle ctrl-c
     let handle = Arc::new(Mutex::new(BufWriter::with_capacity(
@@ -57,6 +59,7 @@ fn main() {
     // handle arguments
     let matches = sg().get_matches();
     let case_insensitive_flag = matches.get_flag("case-insensitive");
+    let common_flag = matches.get_flag("common");
     let count_flag = matches.get_flag("count");
     let dir_flag = matches.get_flag("dir");
     let file_flag = matches.get_flag("file");
@@ -112,7 +115,7 @@ fn main() {
             .unwrap_or_default();
 
         // store exclude patterns in regex set
-        let excludes = RegexSet::new(exclude_patterns).unwrap_or_else(|err| {
+        let excludes = build_excludes_regex(exclude_patterns, common_flag).unwrap_or_else(|err| {
             error!("Unable to get regex pattern: {err}");
             process::exit(1);
         });
@@ -153,6 +156,7 @@ fn main() {
                 !excludes.is_match(&name.to_string_lossy())
             })
             .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
+            // INFO filters first to reduce memory overhead when using rayon
             .par_bridge()
             .for_each(|entry| {
                 // all pre-filters (set via flags) are checked -> start counting entries
@@ -375,6 +379,23 @@ fn set_search_depth(matches: &ArgMatches) -> u32 {
         // default search depth is 1000000
         return 1000000;
     }
+}
+
+fn build_excludes_regex(
+    exclude_patterns: Vec<String>,
+    common_flag: bool,
+) -> Result<RegexSet, regex::Error> {
+    let all_excludes: Vec<String> = if common_flag {
+        COMMON_PRE_FILTERS
+            .iter()
+            .map(|&s| s.to_string())
+            .chain(exclude_patterns.into_iter())
+            .collect()
+    } else {
+        exclude_patterns
+    };
+
+    RegexSet::new(all_excludes)
 }
 
 fn build_regex(patterns: &str, case_insensitive_flag: bool, unicode_flag: bool) -> Regex {
@@ -904,7 +925,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.2.1")
+        .version("1.2.2")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
@@ -922,6 +943,20 @@ fn sg() -> Command {
                 .short('i')
                 .long("case-insensitive")
                 .help("Search case insensitively")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("common")
+                .short('C')
+                .long("common")
+                .help("Set common pre-filters")
+                .long_help(format!(
+                    "{}\n{}\n{}\n{}",
+                    "Set common pre-filters",
+                    "Excludes some files from the search, that usually pollute the output with hugh amounts of data",
+                    "Common examples are source maps, stored in *.js.map files",
+                    "They take thousands of lines of pretty code and turn it into only a few lines of ugly code",
+                ))
                 .action(ArgAction::SetTrue),
         )
         .arg(
