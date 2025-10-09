@@ -50,7 +50,7 @@ sg . .\Documents -e txt -c
 - search e-mails (e.g.: leann.phydon@gmail.com) in files
 
 ```shell
-$ sg . . -g "[\w\d]+\.[\w\d]+@[\w]+\.[\w]+"
+$ sg . . -g "[\w\d]*\.*[\w\d]+@[\w]+\.[\w]+"
 ```
 
 
