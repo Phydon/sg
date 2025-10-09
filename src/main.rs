@@ -930,7 +930,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.2.2")
+        .version("1.2.3")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
