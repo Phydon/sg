@@ -63,6 +63,7 @@ fn main() {
     let count_flag = matches.get_flag("count");
     let dir_flag = matches.get_flag("dir");
     let file_flag = matches.get_flag("file");
+    let link_flag = matches.get_flag("link");
     let only_filepaths_flag = matches.get_flag("only-filepaths");
     let hidden_flag = matches.get_flag("hidden");
     let raw_flag = matches.get_flag("raw");
@@ -218,12 +219,24 @@ fn main() {
                             }
 
                             if !count_flag {
-                                fileobject.show(&handle, &captures, only_filepaths_flag, raw_flag);
+                                fileobject.show(
+                                    &handle,
+                                    &captures,
+                                    link_flag,
+                                    only_filepaths_flag,
+                                    raw_flag,
+                                );
                             }
                         }
                     } else {
                         if !count_flag {
-                            fileobject.show(&handle, &captures, only_filepaths_flag, raw_flag);
+                            fileobject.show(
+                                &handle,
+                                &captures,
+                                link_flag,
+                                only_filepaths_flag,
+                                raw_flag,
+                            );
                         }
                     }
                 }
@@ -340,6 +353,7 @@ impl FileObject {
         self,
         handle: &Arc<Mutex<BufWriter<Stdout>>>,
         captures: &Vec<Match>,
+        link_flag: bool,
         only_filepaths_flag: bool,
         raw_flag: bool,
     ) {
@@ -350,9 +364,13 @@ impl FileObject {
         } else {
             let name = highlight_capture(&self.name, captures, false);
             // make file clickable on windows by adding 'file://'
+            // TODO checkout 'url' crate (https://github.com/servo/rust-url) to replace 'file://'
             // TODO check if terminal accepts clickable paths
-            // TODO new flag --hyperlink/--link
-            let path = format!("file://{}/{}", self.parent, &name);
+            let path = if link_flag {
+                format!("file://{}/{}", self.parent, &name)
+            } else {
+                format!("{}/{}", self.parent, &name)
+            };
             matches.push(path);
         }
 
@@ -1048,6 +1066,21 @@ fn sg() -> Command {
                 .num_args(1)
                 .conflicts_with("dir")
                 .value_name("REGEX"),
+        )
+        .arg(
+            Arg::new("link")
+                .short('l')
+                .long("link")
+                .visible_alias("hyperlink")
+                .help("Make filepaths clickable")
+                .long_help(format!(
+                    "{}\n{}\n{}",
+                    "Make filepaths clickable, so that it opens the file or directory with the default tool or program",
+                    "Terminal has to accept clickable filepaths",
+                    "(Tested with Windows Terminal)",
+                ))
+                .conflicts_with("raw")
+                .action(ArgAction::SetTrue),
         )
         .arg(
             Arg::new("list-common")
