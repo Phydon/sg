@@ -54,7 +54,6 @@ fn main() {
         error!("Unable to find or create a config directory: {err}");
         process::exit(1);
     });
-
     init_logger(&config_dir);
 
     // handle arguments
@@ -64,7 +63,7 @@ fn main() {
     let count_flag = matches.get_flag("count");
     let dir_flag = matches.get_flag("dir");
     let file_flag = matches.get_flag("file");
-    let matching_files_flag = matches.get_flag("matching-files");
+    let only_filepaths_flag = matches.get_flag("only-filepaths");
     let hidden_flag = matches.get_flag("hidden");
     let raw_flag = matches.get_flag("raw");
     let show_errors_flag = matches.get_flag("show-errors");
@@ -157,16 +156,16 @@ fn main() {
                 !excludes.is_match(&name.to_string_lossy())
             })
             .filter(|entry| filetype_filter(entry, &grep_reg, file_flag, dir_flag))
-            // INFO filters first to reduce memory overhead when using rayon
+            // INFO filter first to reduce memory overhead when using rayon
             .par_bridge()
             .for_each(|entry| {
                 // all pre-filters (set via flags) are checked -> start counting entries
                 entry_count.fetch_add(1, Ordering::Relaxed);
 
-                let mut quirkle = Quirkle::new(&entry);
+                let mut fileobject = FileObject::new(&entry);
 
                 // search for a pattern match (regex) in the remaining entries
-                let name = quirkle.name();
+                let name = fileobject.name();
                 let captures: Vec<_> = reg.find_iter(&name).collect();
                 if !captures.is_empty() {
                     search_hits.fetch_add(1, Ordering::Relaxed);
@@ -174,7 +173,7 @@ fn main() {
                     // if grep_flag is set -> search for pattern matches (regex) in files
                     if !grep_reg.as_str().is_empty() {
                         // TODO handle non-UTF8 data???
-                        let content = match fs::read_to_string(&quirkle.path) {
+                        let content = match fs::read_to_string(&fileobject.path) {
                             Ok(s) => s,
                             Err(err) => {
                                 error_count.fetch_add(1, Ordering::Relaxed);
@@ -190,7 +189,7 @@ fn main() {
                         if grep_reg.is_match(&content) {
                             grep_files.fetch_add(1, Ordering::Relaxed);
 
-                            if !matching_files_flag {
+                            if !only_filepaths_flag {
                                 let mut linenumber = 0;
                                 for line in content.lines() {
                                     linenumber += 1;
@@ -203,26 +202,28 @@ fn main() {
                                             .fetch_add(grep_captures.len(), Ordering::Relaxed);
 
                                         if raw_flag {
-                                            let qline = QLine::new(linenumber, line.to_string());
-                                            quirkle.add_line(qline);
+                                            let line_match =
+                                                LineMatch::new(linenumber, line.to_string());
+                                            fileobject.add_matching_line(line_match);
                                         } else {
                                             let highlighted_line =
                                                 highlight_capture(&line, &grep_captures, true);
 
-                                            let qline = QLine::new(linenumber, highlighted_line);
-                                            quirkle.add_line(qline);
+                                            let line_match =
+                                                LineMatch::new(linenumber, highlighted_line);
+                                            fileobject.add_matching_line(line_match);
                                         }
                                     }
                                 }
                             }
 
                             if !count_flag {
-                                quirkle.show(&handle, &captures, matching_files_flag, raw_flag);
+                                fileobject.show(&handle, &captures, only_filepaths_flag, raw_flag);
                             }
                         }
                     } else {
                         if !count_flag {
-                            quirkle.show(&handle, &captures, matching_files_flag, raw_flag);
+                            fileobject.show(&handle, &captures, only_filepaths_flag, raw_flag);
                         }
                     }
                 }
@@ -230,22 +231,22 @@ fn main() {
 
         // empty bufwriter
         handle.lock().unwrap().flush().unwrap_or_else(|err| {
-            error!("Error flushing writer: {err}");
+            error!("Error flushing stdout buffer: {err}");
             process::exit(1)
         });
 
-        let hits = unpack_hits(
+        let counters = unpack_search_counters(
             grep_reg,
             grep_files,
             grep_patterns,
-            matching_files_flag,
+            only_filepaths_flag,
             search_hits,
         );
 
         if count_flag && !stats_flag {
-            println!("{}", hits);
+            println!("{}", counters);
         } else if stats_flag {
-            let colorized_hits = colorize_hits(hits);
+            let colorized_hits = colorize_hits(counters);
 
             println!(
                 "[{}  {} {} {}]",
@@ -274,22 +275,22 @@ fn main() {
     }
 }
 
-struct Quirkle {
+#[derive(Clone)]
+struct LineMatch {
+    linenumber: u32,
+    oneliner: String,
+}
+
+struct FileObject {
     // I needed a name, don`t sue me
     // reference: https://en.wikipedia.org/wiki/Qwirkle
     name: String,
     parent: String,
     path: String,
-    lines: Option<Vec<QLine>>,
+    matching_lines: Option<Vec<LineMatch>>,
 }
 
-#[derive(Clone)]
-struct QLine {
-    linenumber: u32,
-    oneliner: String,
-}
-
-impl QLine {
+impl LineMatch {
     fn new(linenumber: u32, oneliner: String) -> Self {
         Self {
             linenumber,
@@ -310,18 +311,18 @@ impl QLine {
     }
 }
 
-impl Quirkle {
+impl FileObject {
     fn new(entry: &DirEntry) -> Self {
         let name = entry.file_name().to_string_lossy().to_string();
         let parent = get_parent_path(entry.clone());
         let path = format!("{}/{}", parent, name);
-        let lines = None;
+        let matching_lines = None;
 
         Self {
             name,
             parent,
             path,
-            lines,
+            matching_lines,
         }
     }
 
@@ -329,15 +330,17 @@ impl Quirkle {
         self.name.clone()
     }
 
-    fn add_line(&mut self, qline: QLine) {
-        self.lines.get_or_insert_with(Vec::new).push(qline);
+    fn add_matching_line(&mut self, line_match: LineMatch) {
+        self.matching_lines
+            .get_or_insert_with(Vec::new)
+            .push(line_match);
     }
 
     fn show(
         self,
         handle: &Arc<Mutex<BufWriter<Stdout>>>,
         captures: &Vec<Match>,
-        matching_files_flag: bool,
+        only_filepaths_flag: bool,
         raw_flag: bool,
     ) {
         let mut matches: Vec<String> = Vec::new();
@@ -353,8 +356,8 @@ impl Quirkle {
             matches.push(path);
         }
 
-        if let Some(lines) = self.lines {
-            if !matching_files_flag {
+        if let Some(lines) = self.matching_lines {
+            if !only_filepaths_flag {
                 let mut lines: Vec<String> = lines
                     .iter()
                     .map(|line| {
@@ -590,22 +593,22 @@ fn show_content_errors(path: &DirEntry, err: &io::Error) {
     }
 }
 
-fn unpack_hits(
+fn unpack_search_counters(
     grep_reg: Regex,
     grep_files: Arc<AtomicUsize>,
     grep_patterns: Arc<AtomicUsize>,
-    matching_files_flag: bool,
+    only_filepaths_flag: bool,
     search_hits: Arc<AtomicUsize>,
 ) -> String {
     // format found search hits based on whether grep flag was set or not
     // if grep flag was set, it shows:
     //     - for found files containing matches inside the file
-    //         (shows only this number when matching_files_flag was set)
+    //         (shows only this number when only_filepaths_flag was set)
     //     - for number of found matches (inside of files) overall
     // if the grep flag was not set it shows one number: the number of found files
     // containing a match inside the filename
-    let hits = if !grep_reg.as_str().is_empty() {
-        if matching_files_flag {
+    let counters = if !grep_reg.as_str().is_empty() {
+        if only_filepaths_flag {
             grep_files.load(Ordering::Relaxed).to_string()
         } else {
             format!(
@@ -618,7 +621,7 @@ fn unpack_hits(
         search_hits.load(Ordering::Relaxed).to_string()
     };
 
-    hits
+    counters
 }
 
 fn colorize_hits(hits: String) -> String {
@@ -1054,20 +1057,6 @@ fn sg() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("matching-files")
-                .short('m')
-                .long("matching-files")
-                .visible_alias("matches")
-                .help("Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines")
-                .long_help(format!(
-                    "{}\n{}",
-                    "Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines",
-                    "Can only be used together with the 'grep' flag",
-                ))
-                .requires("grep")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("hidden")
                 .short('H')
                 .long("hidden")
@@ -1079,6 +1068,20 @@ fn sg() -> Command {
                     "Everything starting with '.' counts as hidden as well",
                     "Hidden files and directories are excluded by default",
                 ))
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("only-filepaths")
+                .short('o')
+                .long("only-filepaths")
+                .visible_alias("only")
+                .help("Only show the files that contain the grep regex pattern, without printing the actual matching lines")
+                .long_help(format!(
+                    "{}\n{}",
+                    "Only show the files that contain the grep regex pattern, without printing the actual matching lines",
+                    "Can only be used together with the 'grep' flag",
+                ))
+                .requires("grep")
                 .action(ArgAction::SetTrue),
         )
         .arg(
