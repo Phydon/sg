@@ -348,6 +348,7 @@ impl Quirkle {
             let name = highlight_capture(&self.name, captures, false);
             // make file clickable on windows by adding 'file://'
             // TODO check if terminal accepts clickable paths
+            // TODO new flag --hyperlink/--link
             let path = format!("file://{}/{}", self.parent, &name);
             matches.push(path);
         }
