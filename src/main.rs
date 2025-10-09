@@ -742,7 +742,7 @@ $ sg . .\Documents -e txt -c
         r###"
 - search e-mails (e.g.: leann.phydon@gmail.com) in files
 
-$ sg . . -g "[\w\d]+\.[\w\d]+@[\w]+\.[\w]+"
+$ sg . . -g "[\w\d]*\.*[\w\d]+@[\w]+\.[\w]+"
     "###
     );
 }
