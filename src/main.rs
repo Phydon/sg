@@ -30,6 +30,7 @@ const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
 // TODO add other useful pre-filters
 const COMMON_PRE_FILTERS: &[&str] = &[
+    r"\.js$",         // javascript file
     r"\.js.map$",     // javascript source map
     r"index\..*\.js", // javascript index file
 ];
@@ -256,6 +257,10 @@ fn main() {
                     .truecolor(217, 83, 96),
                 colorized_hits
             );
+        }
+    } else if matches.get_flag("list-common") {
+        for filter in COMMON_PRE_FILTERS {
+            println!("{filter}");
         }
     } else if let Some(_) = matches.subcommand_matches("log") {
         show_logs(&config_dir);
@@ -953,7 +958,7 @@ fn sg() -> Command {
                 .long_help(format!(
                     "{}\n{}\n{}\n{}",
                     "Set common pre-filters",
-                    "Excludes some files from the search, that usually pollute the output with hugh amounts of data",
+                    "Exclude some files from the search, that usually pollute the output with hugh amounts of data",
                     "Common examples are source maps, stored in *.js.map files",
                     "They take thousands of lines of pretty code and turn it into only a few lines of ugly code",
                 ))
@@ -1041,6 +1046,13 @@ fn sg() -> Command {
                 .value_name("REGEX"),
         )
         .arg(
+            Arg::new("list-common")
+                .long("list-common")
+                .help("List all common pre-filters")
+                .exclusive(true)
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("matching-files")
                 .short('m')
                 .long("matching-files")
@@ -1064,7 +1076,7 @@ fn sg() -> Command {
                     "Include hidden files and directories in search",
                     "If a directory is hidden, all its content counts as hidden as well",
                     "Everything starting with '.' counts as hidden as well",
-                    "Excludes hidden files and directories by default",
+                    "Hidden files and directories are excluded by default",
                 ))
                 .action(ArgAction::SetTrue),
         )
@@ -1123,6 +1135,7 @@ fn sg() -> Command {
         )
         .subcommand(
             Command::new("examples")
+                .short_flag('X')
                 .long_flag("examples")
                 .visible_aliases(["example", "--example"])
                 .about("Show examples"),
