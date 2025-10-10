@@ -63,10 +63,10 @@ Usage: sg [REGEX] [PATH] [OPTIONS]
        sg [COMMAND]
 
 Commands:
-  examples, --examples  Show examples [aliases: example, --example]
-  log, -L, --log        Show content of the log file
-  syntax, -S, --syntax  Show regex syntax information
-  help                  Print this message or the help of the given subcommand(s)
+  examples, -X, --examples  Show examples [aliases: example, --example]
+  log, -L, --log            Show content of the log file
+  syntax, -S, --syntax      Show regex syntax information
+  help                      Print this message or the help of the given subcommand(s)
 
 Arguments:
   [REGEX] [PATH]  Add a search regex and a path for the file search
@@ -81,8 +81,10 @@ Options:
   -E, --exclude <REGEX>...          Exclude regex patterns from the search
   -f, --file                        Search only in filenames for the regex [aliases: files]
   -g, --grep <REGEX>                Search for specific regex pattern in files
-  -m, --matching-files              Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines [aliases: matches]
+  -l, --link                        Make filepaths clickable [aliases: hyperlink]
+      --list-common                 List all common pre-filters
   -H, --hidden                      Include hidden files and directories in search
+  -o, --only-filepaths              Only show the files that contain the grep regex pattern, without printing the actual matching lines [aliases: only]
   -r, --raw                         Don`t colourize the search output and speed up the output printing
       --show-errors                 Show possible filesystem warnings and errors [aliases: show-error]
   -s, --stats                       Show short search statistics at the end [aliases: statistic, statistics]
@@ -98,10 +100,10 @@ Usage: sg [REGEX] [PATH] [OPTIONS]
        sg [COMMAND]
 
 Commands:
-  examples, --examples  Show examples [aliases: example, --example]
-  log, -L, --log        Show content of the log file
-  syntax, -S, --syntax  Show regex syntax information
-  help                  Print this message or the help of the given subcommand(s)
+  examples, -X, --examples  Show examples [aliases: example, --example]
+  log, -L, --log            Show content of the log file
+  syntax, -S, --syntax      Show regex syntax information
+  help                      Print this message or the help of the given subcommand(s)
 
 Arguments:
   [REGEX] [PATH]
@@ -113,7 +115,7 @@ Options:
 
   -C, --common
           Set common pre-filters
-          Excludes some files from the search, that usually pollute the output with hugh amounts of data
+          Exclude some files from the search, that usually pollute the output with hugh amounts of data
           Common examples are source maps, stored in *.js.map files
           They take thousands of lines of pretty code and turn it into only a few lines of ugly code
 
@@ -151,17 +153,26 @@ Options:
   -g, --grep <REGEX>
           Search for specific regex pattern in files
 
-  -m, --matching-files
-          Only show the relevant files that contain the grep regex pattern, without printing the actual matching lines
-          Can only be used together with the 'grep' flag
+  -l, --link
+          Make filepaths clickable, so that it opens the file or directory with the default tool or program
+          Terminal has to accept clickable filepaths
 
-          [aliases: matches]
+          [aliases: hyperlink]
+
+      --list-common
+          List all common pre-filters
 
   -H, --hidden
           Include hidden files and directories in search
           If a directory is hidden, all its content counts as hidden as well
           Everything starting with '.' counts as hidden as well
-          Excludes hidden files and directories by default
+          Hidden files and directories are excluded by default
+
+  -o, --only-filepaths
+          Only show the files that contain the grep regex pattern, without printing the actual matching lines
+          Can only be used together with the 'grep' flag
+
+          [aliases: only]
 
   -r, --raw
           Focus on performance
