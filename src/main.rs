@@ -3,6 +3,10 @@
 // TODO only list the file extensions in the given directory and count the number of files
 // TODO     e.g. 'sg . . --only-extensions' would only count what file extensions are in
 // TODO     the current directory and count how many files with what extension
+//
+// TODO added examples for every command/option/flag
+// TODO also add specific help for each command/option/flag, e.g.:
+// TODO     'sg help count' prints specific help and an example for the '--count' flag
 use std::{
     ffi::OsStr,
     fs,
