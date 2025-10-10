@@ -23,6 +23,7 @@ use flexi_logger::{detailed_format, Duplicate, FileSpec, Logger};
 use log::{error, info, warn};
 use rayon::prelude::*;
 use regex::{Match, Regex, RegexBuilder, RegexSet};
+use supports_hyperlinks::Stream;
 use walkdir::{DirEntry, WalkDir};
 
 // TODO reduce buffer size for quicker user feedback of found files??
@@ -36,6 +37,14 @@ const COMMON_PRE_FILTERS: &[&str] = &[
 ];
 
 fn main() {
+    // TODO support more operating sytems
+    if !cfg!(target_os = "windows") {
+        unimplemented!(
+            "{}",
+            format!("{} is currently not supported", std::env::consts::OS)
+        );
+    }
+
     // INFO don`t lock stdout, otherwise unable to handle ctrl-c
     let handle = Arc::new(Mutex::new(BufWriter::with_capacity(
         BUFFER_CAPACITY,
@@ -72,6 +81,16 @@ fn main() {
     let unicode_flag = matches.get_flag("no_unicode");
 
     let depth_flag = set_search_depth(&matches);
+
+    // check if terminal accepts clickable paths
+    if link_flag && !supports_hyperlinks::on(Stream::Stdout) {
+        let err = sg().error(
+            clap::error::ErrorKind::ValueValidation,
+            "This terminal doesn't support hyperlinks on stdout. You might want to run the command without the '--link' flag.",
+        );
+        warn!("{}", err);
+        process::exit(0);
+    }
 
     if let Some(args) = matches
         .get_many::<String>("args")
@@ -363,11 +382,9 @@ impl FileObject {
             matches.push(self.path);
         } else {
             let name = highlight_capture(&self.name, captures, false);
-            // make file clickable on windows by adding 'file://'
-            // TODO checkout 'url' crate (https://github.com/servo/rust-url) to replace 'file://'
-            // TODO check if terminal accepts clickable paths
+            // make file clickable by adding 'file:///'
             let path = if link_flag {
-                format!("file://{}/{}", self.parent, &name)
+                format!("file:///{}/{}", self.parent, &name)
             } else {
                 format!("{}/{}", self.parent, &name)
             };
@@ -1074,10 +1091,9 @@ fn sg() -> Command {
                 .visible_alias("hyperlink")
                 .help("Make filepaths clickable")
                 .long_help(format!(
-                    "{}\n{}\n{}",
+                    "{}\n{}",
                     "Make filepaths clickable, so that it opens the file or directory with the default tool or program",
                     "Terminal has to accept clickable filepaths",
-                    "(Tested with Windows Terminal)",
                 ))
                 .conflicts_with("raw")
                 .action(ArgAction::SetTrue),
