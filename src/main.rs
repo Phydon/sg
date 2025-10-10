@@ -26,7 +26,6 @@ use regex::{Match, Regex, RegexBuilder, RegexSet};
 use supports_hyperlinks::Stream;
 use walkdir::{DirEntry, WalkDir};
 
-// TODO reduce buffer size for quicker user feedback of found files??
 const BUFFER_CAPACITY: usize = 64 * (1 << 10); // 64 KB
 
 // TODO add other useful pre-filters
@@ -969,7 +968,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.2.3")
+        .version("1.2.4")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
