@@ -298,40 +298,40 @@ fn main() {
             Some("case-insensitive") | Some("--case-insensitive") | Some("-i") => {
                 examples_case_insensitive();
             }
-            Some("common") => {
+            Some("common") | Some("--common") | Some("-C") => {
                 examples_common();
             }
-            Some("count") => {
+            Some("count") | Some("--count") | Some("-c") => {
                 examples_count();
             }
-            Some("depth") => {
+            Some("depth") | Some("--depth") | Some("-D") => {
                 examples_depth();
             }
-            Some("dir") => {
+            Some("dir") | Some("--dir") | Some("-d") => {
                 examples_dir();
             }
-            Some("file") => {
+            Some("file") | Some("--file") | Some("-f") => {
                 examples_file();
             }
-            Some("link") => {
+            Some("link") | Some("--link") | Some("-l") => {
                 println!("link");
             }
-            Some("only-filepaths") => {
+            Some("only-filepaths") | Some("--only-filepaths") | Some("-o") => {
                 println!("only-filepaths");
             }
-            Some("hidden") => {
+            Some("hidden") | Some("--hidden") | Some("-H") => {
                 println!("hidden");
             }
-            Some("raw") => {
+            Some("raw") | Some("--raw") | Some("-r") => {
                 println!("raw");
             }
-            Some("show-errors") => {
+            Some("show-errors") | Some("--show-errors") => {
                 println!("show-errors");
             }
-            Some("stats") => {
+            Some("stats") | Some("--stats") | Some("-s") => {
                 println!("stats");
             }
-            Some("no-unicode") => {
+            Some("no-unicode") | Some("--no-unicode") | Some("-u") => {
                 println!("no-unicode");
             }
             _ => {
@@ -1340,12 +1340,11 @@ fn sg() -> Command {
                     "If an <OPTION> is specified with this command, it will show specific examples for that option"
                 ))
                 .arg(
-                    // FIXME allow arguments to be passed as "-i" instead of  "-- -i"
-                    // FIXME     e.g.: 'sg -X -i' shows examples of the --case-insensitive option
                     Arg::new("option")
-                        .help("Shows examples for the specified option")
+                        .help("Shows examples for the specified OPTION")
                         .action(ArgAction::Set)
                         .num_args(0..=1)
+                        .allow_hyphen_values(true)
                         .value_name("OPTION"),
                 ),
         )
