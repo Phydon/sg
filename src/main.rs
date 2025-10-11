@@ -297,55 +297,42 @@ fn main() {
             // TODO     'sg help count' prints specific help and an example for the '--count' flag
             Some("case-insensitive") | Some("--case-insensitive") | Some("-i") => {
                 examples_case_insensitive();
-                process::exit(0);
             }
             Some("common") => {
-                println!("common");
-                process::exit(0);
+                examples_common();
             }
             Some("count") => {
-                println!("count");
-                process::exit(0);
+                examples_count();
             }
             Some("depth") => {
-                println!("depth");
-                process::exit(0);
+                examples_depth();
             }
             Some("dir") => {
                 println!("dir");
-                process::exit(0);
             }
             Some("file") => {
                 println!("file");
-                process::exit(0);
             }
             Some("link") => {
                 println!("link");
-                process::exit(0);
             }
             Some("only-filepaths") => {
                 println!("only-filepaths");
-                process::exit(0);
             }
             Some("hidden") => {
                 println!("hidden");
-                process::exit(0);
             }
             Some("raw") => {
                 println!("raw");
-                process::exit(0);
             }
             Some("show-errors") => {
                 println!("show-errors");
-                process::exit(0);
             }
             Some("stats") => {
                 println!("stats");
-                process::exit(0);
             }
             Some("no-unicode") => {
                 println!("no-unicode");
-                process::exit(0);
             }
             _ => {
                 examples();
@@ -870,6 +857,54 @@ $ sg main . -i
 - ignore the case, so 'FIXME', 'TODO', 'Fixme', 'Todo', etc. are also valid
 
 $ sg . . -g "fixme|todo" -i 
+    "###
+    );
+}
+
+fn examples_common() {
+    println!("\n{}\n----------", "Example 1".bold());
+    println!(
+        r###"
+- search for files or directories that include the word 'main'
+- exclude sepcific files from the search -> these files can be viewed with the '--list-common' option
+
+$ sg main . -C 
+    "###
+    );
+}
+
+fn examples_count() {
+    println!("\n{}\n----------", "Example 1".bold());
+    println!(
+        r###"
+- count all files and directories in the current directory
+
+$ sg . . -c 
+    "###
+    );
+
+    println!("\n{}\n----------", "Example 2".bold());
+    println!(
+        r###"
+- count all files in the current directory that include the word 'FIXME'
+- the result is shown as 'x y', where
+    x: is the number of files that include at least one word 'FIXME'
+    y: is the number of overall matches of the word 'FIXME' in all files
+
+$ sg . . -g FIXME -c 
+    "###
+    );
+}
+
+fn examples_depth() {
+    println!("\n{}\n----------", "Example 1".bold());
+    println!(
+        r###"
+- set the maximum search depth to 2
+- starting from the specified directory (in this case the current directory)
+    - descend into the directories up to the specified level (in this case 2)
+
+$ sg . . -D 2 
     "###
     );
 }
