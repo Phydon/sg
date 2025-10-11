@@ -3,10 +3,6 @@
 // TODO only list the file extensions in the given directory and count the number of files
 // TODO     e.g. 'sg . . --only-extensions' would only count what file extensions are in
 // TODO     the current directory and count how many files with what extension
-//
-// TODO added examples for every command/option/flag
-// TODO also add specific help for each command/option/flag, e.g.:
-// TODO     'sg help count' prints specific help and an example for the '--count' flag
 use std::{
     ffi::OsStr,
     fs,
@@ -40,13 +36,7 @@ const COMMON_PRE_FILTERS: &[&str] = &[
 ];
 
 fn main() {
-    // TODO support more operating sytems
-    if !cfg!(target_os = "windows") {
-        unimplemented!(
-            "{}",
-            format!("{} is currently not supported", std::env::consts::OS)
-        );
-    }
+    check_supported_os();
 
     // INFO don`t lock stdout, otherwise unable to handle ctrl-c
     let handle = Arc::new(Mutex::new(BufWriter::with_capacity(
@@ -300,8 +290,19 @@ fn main() {
         }
     } else if let Some(_) = matches.subcommand_matches("log") {
         show_logs(&config_dir);
-    } else if let Some(_) = matches.subcommand_matches("examples") {
-        examples();
+    } else if let Some(sub_match) = matches.subcommand_matches("examples") {
+        match sub_match.get_one::<String>("option").map(|s| s.as_str()) {
+            // TODO added examples for every command/option/flag
+            // TODO also add specific help for each command/option/flag, e.g.:
+            // TODO     'sg help count' prints specific help and an example for the '--count' flag
+            Some("count") => {
+                println!("COUNT");
+                process::exit(0);
+            }
+            _ => {
+                examples();
+            }
+        }
     } else if let Some(_) = matches.subcommand_matches("syntax") {
         show_regex_syntax();
     } else {
@@ -410,6 +411,16 @@ impl FileObject {
         }
 
         write_stdout(handle, matches);
+    }
+}
+
+fn check_supported_os() {
+    // TODO support more operating sytems
+    if !cfg!(target_os = "windows") {
+        unimplemented!(
+            "{}",
+            format!("{} is currently not supported", std::env::consts::OS)
+        );
     }
 }
 
@@ -977,6 +988,8 @@ fn sg() -> Command {
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
             sg [COMMAND]")
+        .infer_long_args(true)
+        .infer_subcommands(true)
         .arg_required_else_help(true)
         .arg(
             Arg::new("args")
@@ -1194,7 +1207,19 @@ fn sg() -> Command {
                 .short_flag('X')
                 .long_flag("examples")
                 .visible_aliases(["example", "--example"])
-                .about("Show examples"),
+                // .about("Show examples")
+                .long_about(format!(
+                    "{}\n{}\n",
+                    "Show examples",
+                    "If an <OPTION> is specified with this command, it will show specific examples for that option"
+                ))
+                .arg(
+                    Arg::new("option")
+                        .help("Shows examples for the specified option")
+                        .action(ArgAction::Set)
+                        .num_args(0..=1)
+                        .value_name("OPTION"),
+                ),
         )
         .subcommand(
             Command::new("log")
