@@ -308,10 +308,10 @@ fn main() {
                 examples_depth();
             }
             Some("dir") => {
-                println!("dir");
+                examples_dir();
             }
             Some("file") => {
-                println!("file");
+                examples_file();
             }
             Some("link") => {
                 println!("link");
@@ -905,6 +905,28 @@ fn examples_depth() {
     - descend into the directories up to the specified level (in this case 2)
 
 $ sg . . -D 2 
+    "###
+    );
+}
+
+fn examples_dir() {
+    println!("\n{}\n----------", "Example 1".bold());
+    println!(
+        r###"
+- only search directories with the name 'main'
+
+$ sg main . -d  
+    "###
+    );
+}
+
+fn examples_file() {
+    println!("\n{}\n----------", "Example 1".bold());
+    println!(
+        r###"
+- only search files with the name 'main'
+
+$ sg main . -f  
     "###
     );
 }
