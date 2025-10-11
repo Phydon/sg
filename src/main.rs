@@ -71,7 +71,7 @@ fn main() {
     let raw_flag = matches.get_flag("raw");
     let show_errors_flag = matches.get_flag("show-errors");
     let stats_flag = matches.get_flag("stats");
-    let unicode_flag = matches.get_flag("no_unicode");
+    let unicode_flag = matches.get_flag("no-unicode");
 
     let depth_flag = set_search_depth(&matches);
 
@@ -295,8 +295,56 @@ fn main() {
             // TODO added examples for every command/option/flag
             // TODO also add specific help for each command/option/flag, e.g.:
             // TODO     'sg help count' prints specific help and an example for the '--count' flag
+            Some("case-insensitive") | Some("--case-insensitive") | Some("-i") => {
+                examples_case_insensitive();
+                process::exit(0);
+            }
+            Some("common") => {
+                println!("common");
+                process::exit(0);
+            }
             Some("count") => {
-                println!("COUNT");
+                println!("count");
+                process::exit(0);
+            }
+            Some("depth") => {
+                println!("depth");
+                process::exit(0);
+            }
+            Some("dir") => {
+                println!("dir");
+                process::exit(0);
+            }
+            Some("file") => {
+                println!("file");
+                process::exit(0);
+            }
+            Some("link") => {
+                println!("link");
+                process::exit(0);
+            }
+            Some("only-filepaths") => {
+                println!("only-filepaths");
+                process::exit(0);
+            }
+            Some("hidden") => {
+                println!("hidden");
+                process::exit(0);
+            }
+            Some("raw") => {
+                println!("raw");
+                process::exit(0);
+            }
+            Some("show-errors") => {
+                println!("show-errors");
+                process::exit(0);
+            }
+            Some("stats") => {
+                println!("stats");
+                process::exit(0);
+            }
+            Some("no-unicode") => {
+                println!("no-unicode");
                 process::exit(0);
             }
             _ => {
@@ -805,6 +853,27 @@ $ sg . . -g "[\w\d]*\.*[\w\d]+@[\w]+\.[\w]+"
     );
 }
 
+fn examples_case_insensitive() {
+    println!("\n{}\n----------", "Example 1".bold());
+    println!(
+        r###"
+- search for files or directories that include the word 'main' or 'Main' or 'MAIN' or 'maiN' or etc. in the name of the file or directory
+
+$ sg main . -i 
+    "###
+    );
+
+    println!("\n{}\n----------", "Example 2".bold());
+    println!(
+        r###"
+- search for files where the words 'fixme' or 'todo' are included in their content
+- ignore the case, so 'FIXME', 'TODO', 'Fixme', 'Todo', etc. are also valid
+
+$ sg . . -g "fixme|todo" -i 
+    "###
+    );
+}
+
 fn show_regex_syntax() {
     println!("{}", "Regex Syntax".bold().blue());
     println!(
@@ -983,7 +1052,7 @@ fn sg() -> Command {
         ))
         .long_about(format!("{}\n{}\n", "Simple recursive file and pattern search via regex patterns", "Combine 'find' with 'grep'"))
         // TODO update version
-        .version("1.2.4")
+        .version("1.2.5")
         .author("Leann Phydon <leann.phydon@gmail.com>")
         // INFO format for USAGE specified here: https://docs.rs/clap/latest/clap/struct.Command.html#method.override_usage
         .override_usage("sg [REGEX] [PATH] [OPTIONS]\n       \
@@ -1189,7 +1258,7 @@ fn sg() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("no_unicode")
+            Arg::new("no-unicode")
                 .short('u')
                 .long("no-unicode")
                 .help("Exclude unicode in search")
@@ -1214,6 +1283,8 @@ fn sg() -> Command {
                     "If an <OPTION> is specified with this command, it will show specific examples for that option"
                 ))
                 .arg(
+                    // FIXME allow arguments to be passed as "-i" instead of  "-- -i"
+                    // FIXME     e.g.: 'sg -X -i' shows examples of the --case-insensitive option
                     Arg::new("option")
                         .help("Shows examples for the specified option")
                         .action(ArgAction::Set)
